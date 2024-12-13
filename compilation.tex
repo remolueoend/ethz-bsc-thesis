@@ -1,0 +1,204 @@
+\chapter{Compiling CMFODL}
+\label{chap:compilation}
+
+The complex-typed syntax extensions described in Chapter \ref{chap:complex_data_types} are not yet supported by \MonPoly's monitoring algorithm. It has no support for custom sorts, and instead only supports predicate symbols over the primitive sorts $\mfodlPrimitiveSorts = \{ \mfodlInt, \mfodlFloat, \mfodlString, \mfodlRegex \}$. For \MonPoly to support the full CMFODL syntax described in Chapter \ref{chap:complex_data_types}, the extension presented in this work performs the following two steps, which preserve the semantics of the original formula: We first transform the temporal structure $\rho$ to a new temporal structure $\rho^P$ over finite relations, which domains range over primitive sorts. This transformation is described in Section \ref{sec:transform_signatures} and \ref{sec:transform_temp_structure}. We then replace unsupported syntactic elements by compiling CMFODL formulas to MFODL formulas. This is described in Section \ref{sec:compile_mfodl}. These steps are implemented in \MonPoly itself and are carried out before and during the actual monitoring, allowing users to write MFODL formulas against complex typed temporal structures without any manual transformations.
+
+\section{Transforming signatures}
+\label{sec:transform_signatures}
+A signature $\mathcal{S}^P = (C^P, R^P, \iota)$, known to \MonPoly's monitoring algorithm, consists of a finite set of constant symbols $C^P$, a finite set of predicates $R^P$ disjoint from $C^P$, and a function $\iota : R^P \to \mathds{N}$ assigning each predicate $r \in R^P$ an arity $\iota(r)$ \cite{basinMonitoringMetricFirstorder2015}.
+
+We map a signature $\Delta = (S, S_{def}, C)$ described in Section \ref{sec:mfodl_semantics} to a predicate signature $\mathcal{S}^P = (C^P, R^P, \iota)$ with $R^P = \mfodlCustomSorts$, $\iota := r \mapsto |S_{def}(r)|+1$ and $C^P = C$, where $|S_{def}(r)|$ corresponds to the number of fields of the custom sort $r$ and making the assumption that $C$ contains only values of primitive sorts. In other words, we create a predicate for each custom sort with an arity equal to the number of fields, plus an additional argument used as an object identifier introduced below in Section \ref{sec:transform_temp_structure}. We further create a relation schema $\mathsf{RS} := r \mapsto \mfodlPrimitiveSorts^{\iota(r)}$ from $\Delta$, mapping each predicate in $R^P$ to the sorts of its arguments. This process is described by Algorithm \ref{code:gen_relations}. The sorts of the arguments correspond to the sort of each field of the custom sort $r$. Fields whose values are of custom sorts themselves represent nested objects and are encoded as a reference pointer to a tuple of another relation.
+
+\begin{example}
+	\label{ex:relation_schema_from_sig}
+	We define the signature $\Delta = (\mfodlPrimitiveSorts \cup \{ \mathsf{User}, \mathsf{Request}, \mathsf{Report} \},\\ \{ \mathsf{User} \mapsto \{ \mathsf{name}: \mfodlString \}, \mathsf{Request} \mapsto \{ \mathsf{url}: \mfodlString, \mathsf{user}: \mathsf{User} \}, \mathsf{Report} \mapsto \{ \mathsf{reason}: \mfodlString, \\ \mathsf{user}: \mathsf{User} \} \}, \emptyset)$. The corresponding predicate schema is $\mathcal{S}^P = (\emptyset, \{ \mathsf{User}, \mathsf{Request},\\ \mathsf{Report} \}, \{ \mathsf{User} \mapsto 2, \mathsf{Request} \mapsto 3, \mathsf{Report} \mapsto 3 \})$. From $\Delta$, Algorithm \ref{code:gen_relations} will generate the relation schema $\mathsf{RS} = \{ \mathsf{User} \mapsto (\mfodlInt, \mfodlString), \mathsf{Request} \mapsto (\mfodlInt, \mfodlString, \mfodlInt), \mathsf{Report} \mapsto (\mfodlInt, \mfodlString, \mfodlInt) \}$.
+\end{example}
+
+\RestyleAlgo{ruled}
+\SetKwProg{Fn}{Function}{ is}{end}
+\SetKw{Throw}{throw}
+\SetKw{Call}{call}
+\begin{algorithm}
+	\LinesNumbered
+	\label{code:gen_relations}
+	\caption{Generate relation schema from $\Delta$}
+	\KwData{signature $\Delta = (S, S_{def}, C)$}
+	\KwResult{relation schema $\mathsf{RS} = r \mapsto \mfodlPrimitiveSorts^{\iota(r)}$}
+	\ForEach{$r \in S \setminus \mfodlPrimitiveSorts$}{
+		\tcc{loop over all fields of custom sort $r$:}
+		\ForEach{$(i, f) \in \enum(\ran(S_{def}(r)))$}{
+			\eIf{$S_{def}(r, f) \in \mfodlPrimitiveSorts$}{
+				$t_i \gets S_{def}(r, f)$\;
+			}{
+				$t_i \gets \mfodlInt$\;
+			}
+		}
+		\tcc{first entry corresponds to identifier:}
+		$\mathsf{RS}\left[r \mapsto \left( \mfodlInt, t_1, \dots, t_{|\ran(S_{def}(r))|} \right) \right]$\;
+
+	}
+\end{algorithm}
+
+\section{Transforming complex-typed temporal structures}
+\label{sec:transform_temp_structure}
+A temporal structure $\rho$ of the form $(\tau_i, \mathcal{D}_i)_{i \in \mathds{N}}$ with $\mathcal{D}_i = (\mathds{D}, \mathds{C}, \mathds{O}_i)$, as described in Section \ref{sec:mfodl_semantics}, is not processable by \MonPoly's monitoring algorithm. It must be transformed to a temporal structure $\rho^P$ of the form $(\tau_i, \mathcal{D}^P_i)_{i \in \mathds{N}}$, where $\mathcal{D}_i^P$ is a structure over a signature $\mathcal{S}^P = (C^P, R^P, \iota)$ as defined in Section \ref{sec:transform_signatures}. It consists of a domain $|\mathcal{D}^P| = \{ d \mid (s, d) \in \mathds{D} \land s \in \mfodlPrimitiveSorts \}$ and interpretations $c^{\mathcal{D}^P} \in |\mathcal{D}^{P}|$ and $r^{\mathcal{D}_i^P} \subseteq |\mathcal{D}^P|^{\iota(r)}$ for each $c \in C^P$ and $r \in R^P$ \cite{basinMonitoringMetricFirstorder2015}. The set $r^{\mathcal{D}_i^P}$ is constructed as described in Algorithm \ref{code:gen_tuples}: Values of custom sorts are stored in their dedicated relations, while unique identifiers act as a reference from a tuple entry of a custom sort to its value stored as a tuple in another relation.
+
+One important distinction must be made regarding the uniqueness of the identifiers assigned to objects in Algorithm \ref{code:gen_tuples}, line \ref{line:gen_tuple_uniq_idx}: In this implementation, identifiers are unique per time point, meaning that unrelated objects of two different time points may share the same identifier. This has a major impact on how formulas must be preprocessed before compilation, to retain their original semantics. Section \ref{sec:local_vs_global_idents} provides a rationale for this decision.
+
+\begin{example}
+	\label{ex:transform_temp_structure}
+	\lstset{style=signatures}
+	Let us again consider signatures $\Delta$, $\mathcal{S}^P$ and $\mathsf{RS}$ from example \ref{ex:relation_schema_from_sig} on page \pageref{ex:relation_schema_from_sig}. We additionally define the following temporal structure $\rho$, where $@10$ refers to the timestamp of the time point, and the right-hand side refers to $\mathds{O}_i$:
+	\[
+		\begin{array}{@{}l l}
+			@10: & (\mathsf{Request, \{ \mathsf{url}: (\mfodlString, \text{secr.et}), \mathsf{user}: (\mathsf{User}, \{ \mathsf{name}: (\mfodlString, \text{Eve}) \}) \}}),   \\
+			     & (\mathsf{Request, \{ \mathsf{url}: (\mfodlString, \text{ethz.ch}), \mathsf{user}: (\mathsf{User}, \{ \mathsf{name}: (\mfodlString, \text{Alice}) \}) \}})  \\
+			@20: & (\mathsf{Report, \{ \mathsf{reason}: (\mfodlString, \text{NoAuth}), \mathsf{user}: (\mathsf{User}, \{ \mathsf{name}: (\mfodlString, \text{Alice}) \}) \}})
+		\end{array}
+		\hspace{1000pt minus 1fill}
+	\]
+	Using Algorithm \ref{code:gen_tuples} we can generate the temporal structure $\rho^P$:
+	\[
+		\begin{array}{@{}l l}
+			@10: & \{ \mathsf{User}(1, \text{Eve}), \mathsf{Request}(2, \text{secr.et}, 1), \mathsf{User}(3, \text{Alice}), \mathsf{Request}(4, \text{ethz.ch}, 3) \} \\
+			@20: & \{ \mathsf{User}(1, \text{Alice}), \mathsf{Report}(2, \text{NoAuth}, 1) \}
+		\end{array}
+		\hspace{1000pt minus 1fill}
+	\]
+
+	Note that in $\rho^P$, two tuples exist in the relation $\mathsf{User}$ with the same identifier $1$, referring to two unrelated users Alice and Eve. Because they appear at different time points, they can share the same identifier.
+\end{example}
+
+\RestyleAlgo{ruled}
+\SetKwProg{Fn}{Function}{ is}{end}
+\SetKw{Throw}{throw}
+\SetKw{Call}{call}
+\begin{algorithm}
+	\LinesNumbered
+	\label{code:gen_tuples}
+	\caption{Generate tuples for time point $i$}
+	\KwData{objects $\mathds{O}_i$ of time point $i$}
+	\KwResult{$r^{\mathcal{D}_i^P}$ for all $r \in \{ s \mid (s,\_) \in \mathbb{O}\downarrow \}$}
+	\ForEach{$o = (s, f) \in \mathds{O}$ with $s \in \mfodlCustomSorts$}{
+		\Call{add\_tuple($o$)}\;
+	}
+	\Fn{add\_tuple($o$)}{
+		\KwData{an object $o \in \mathds{O}\downarrow$}
+		\KwResult{a unique identifier assigned to the tuple of $o$}
+		$id \gets \text{unique identifier}$\; \label{line:gen_tuple_uniq_idx}
+		\If{$o = (s, \Pi f)$, for some $s \in \mfodlCustomSorts$}{
+			\ForEach{$(i, n) \in \enum(\dom(f))$}{
+				$(s_n, v_n) \gets f(n)$\;
+				$t_i = \begin{cases}
+						v_n             & \text{ if } s_n \in \mfodlPrimitiveSorts \\
+						add\_tuple(v_n) & \text{ else }
+					\end{cases}$\;
+			}
+			\tcc{Add new tuple to relation $s$:}
+			$s^{\mathcal{D}_i^P} = s^{\mathcal{D}_i^P} \cup \left\{ \left(id, t_1, \dots, t_{|\dom(f)|}\right) \right\}$\;
+
+		}
+		\ElseIf{$o = (s, v)$ for some $s \in \mfodlPrimitiveSorts$}{
+			$s^{\mathcal{D}_i^P} = s^{\mathcal{D}_i^P} \cup \left\{ \left( id, v \right) \right\}$
+		}
+
+		\Return{$id$}\;
+	}
+\end{algorithm}
+
+
+\section{Compiling MFODL formulas}
+\label{sec:compile_mfodl}
+
+This section discusses the compilation of a CMFODL formula evaluated over a temporal structure $\rho$, to an MFODL formula evaluated under $\rho^P$. We distinguish two separate steps: A preprocessing step described in Section \ref{sec:preprocessing} and a subsequent compilation step described in Section \ref{sec:compilation}. The purpose of the preprocessing is to prepare the formula for the compilation step, such that the compiled formula retains the semantics of the input formula in the context of the predicate signature $\mathcal{S}^P$ and structure $\mathcal{D}^P$ described in previous sections \ref{sec:transform_signatures} and \ref{sec:transform_temp_structure}. Technically, a complex-typed MFODL formula may be compiled without prior preprocessing, but it may change its semantics. The preprocessing therefore depends strongly on the transformation of the temporal structure described in Section \ref{sec:transform_temp_structure}, primarily how identifiers are assigned to objects.
+
+We declare the function $\mathsf{typeof}_{\Gamma} : \mfodlTerms \to \mfodlTy$, mapping a given term to its type under the current symbol table $\Gamma$, as inferred by the type inference algorithm described in Chapter \ref{chap:type_checking}.
+Next, we define the set of field terms $\mathds{F}_t$ for some term t. Because MFODL only allows assigning terms to variables, we can assume that $t$ is a variable or projection term without loss of generality. Furthermore, custom sorts are constrained to be non-recursive, as introduced in Section \ref{sec:extensions_mfold_syntax}. Therefore, the following sets $\mathds{F}_t$ and $\mathds{L}_t$ are guaranteed to be well defined and of finite size for any given term $t$.
+\begin{align*}
+	 & \mathds{F}_v = \begin{cases}
+		                  \{v\}                                                                                                                               & \text{if } \mfodlTypeOf{v} \in \mfodlPrimitiveSorts \\
+		                  \left\{ v.n \mid (n,t) \in S_{def}(t) \right\} \cup \left\{ v.f \mid f \in \bigcup_{(n,t) \in S_{def}(t)} \mathds{F}_{v.n} \right\} & \text{else}                                         \\
+	                  \end{cases}
+\end{align*}
+
+Similarly, we define the set of leaf terms $\mathds{L}_t$ for some term t:
+\begin{align*}
+	\mathds{L}_v = \begin{cases}
+		               \{v\}                                                                           & \text{if } \mfodlTypeOf{v} \in \mfodlPrimitiveSorts \\
+		               \left\{ v.f \mid f \in \bigcup_{(n,t) \in S_{def}(t)} \mathds{L}_{v.n} \right\} & \text{else}                                         \\
+	               \end{cases}
+\end{align*}
+
+\begin{example}
+	\label{ex:field_leaf_terms}
+	Given custom sorts $\mathsf{Request}\{ \mathsf{url} : \mfodlString, \mathsf{user} : \mathsf{User} \}$ and $\mathsf{User} \{ \mathsf{name} : \mfodlString \}$, and a variable $t$ with $\mfodlTypeOf{t} = \mathsf{Request}$, the set $\mathds{F}_t$ is equal to \\  $\{ r.url, r.user, r.user.name \}$, while $\mathds{L}_t$ is equal to $\{ r.url, r.user.name \}$.
+\end{example}
+
+We overload the definition of $\mathds{L}_c$ for some constant value $c$, such that $\mathds{L}_c$ consists of the leaf values of $c$ instead:\\
+Given a constant $c = \mathsf{Request} \left\{ \mathsf{url}: "url.tld", \mathsf{user}: \{ \mathsf{name}: "alice" \} \right\}$, $\mathds{L}_c$ is equal to $\left\{ "url.tld", "alice" \right\}$.
+
+\subsection{Semantic-preserving preprocessing}
+\label{sec:preprocessing}
+This section introduces transformations that preserve the semantics of an input formula after compilation. Because Algorithm \ref{code:gen_tuples} assigns locally unique identifiers to objects, certain formula structures must be rewritten before compilation. In general, we must not pass an identifier referencing an object over a temporal operator: The same identifier may reference another unrelated object in a future or past time point. Similarly, we must expand structural equality between two values of complex sorts: Comparing the values of two identifiers themselves may lead to unexpected behavior whenever the identifiers have been assigned at two different time points.
+
+To illustrate this problem, we refer to Example \ref{ex:transform_temp_structure} on page \pageref{ex:transform_temp_structure} and declare the formula $\phi = \mathsf{Request(u) \land \mathsf{r.url} = \text{secr.et}} \rightarrow \mfodlEventually_{[0, 50]} \exists \mathsf{u}.\ \mathsf{Report(u)} \land \mathsf{u.user} = \mathsf{r.user}$. When interpreting the formula $\phi$ over the temporal structure $\rho^P$ of Example \ref{ex:transform_temp_structure} without preprocessing, the formula will evaluate as true. However, by examining the example more carefully, one may realize that the $\mathsf{Report}$ at timestamp $@20$ is addressed to \textit{Alice} instead of \textit{Eve}, who sent the malicious request. The issue arises because the user \textit{Alice} of the $\mathsf{Report}$ at timestamp $@20$ shares the same identifier with the unrelated user \textit{Eve} from timestamp $@10$.
+
+The following paragraphs describe each transformation applied during the preprocessing.
+
+\paragraph{Preprocessing of equalities}
+We interpret MFODL's equality operator on operands of custom sorts as structural equivalence. Section \ref{sec:local_vs_global_idents} discusses this decision in more detail. Hence, a formula of the form $\phi \equiv a = b$, where both $a$ and $b$ are terms of the same custom sort $s$, can be transformed to a semantically equivalent formula $\psi$, where all fields on both values are compared separately: $\psi \equiv \bigwedge_{(f_1, f_2) \in (\mathds{L}_a, \mathds{L}_b)} f_1 = f_2$. Notice that the rule $\textsc{Equal}$, introduced in Figure \ref{fig:formula_type_rules}, does enforce the same sort on both sides of an assignment, which implies that $\mathds{L}_a$ and $\mathds{L}_b$ contain the same projections, but with different prefixes.
+
+Referring to Example \ref{ex:field_leaf_terms} on page \pageref{ex:field_leaf_terms}, comparing two values $a, b$ of custom sort $\mathsf{Request}$ translates to the formula $\psi \equiv a.url = b.url \wedge a.user.name = b.user.name$.
+
+\paragraph{Preprocessing of let-statements}
+The domain of predicates introduced by a let-statement may range over complex sorts. We introduce a transformation that flattens all predicate arguments $a$ of a complex sort by replacing $a$ with a subset of its leaves $\mathds{L}_a$. To formalize this process, we first define the set of usages $\mathds{U}_f[v] \subseteq \mfodlTerms$ as a set of variables and projections that make use of a given variable $v$ in the formula $f$. To transform a formula of the form $\mathsf{let}\ n(\vec{v}) = \psi\ \mathsf{in}\ \phi$ for some formulas $\phi$ and $\psi$, we first define the usage $\mathds{U}_{\psi}[a_i]$ for every argument $a_i \in \vec{v}$. Next, we define a mapping $nv : \mfodlTerms \to \mfodlVars$, mapping each usage $u \in \mathds{U}_{\psi}[a_i]$ to a unique new variable $v_u \notin \mathsf{fv}(\psi)$. We make use of $nv$ to construct the formula $\psi'$ by replacing each usage $u$ in $\psi$ with $nv(u)$. Finally, we construct $\phi'$ by transforming each usage of predicate $n$ in $\phi$: Each argument term $t_i$ in $n(t_1, \dots, t_k)$ is replaced by $\vec{t}_i = \left\{l.f \in \mathds{L}_{t_i} \mid a_i.f \in \mathds{U}_{\psi}[a_i]\right\}$. The resulting formula of the transformation is $\mathsf{let}\ n\left( \bigcup_{i \in [1, k]} \vec{t}_i \right) = \psi'\ \mathsf{in}\ \phi'$.
+\begin{example}
+	Reaching back to the signatures defined in Example \ref{ex:field_leaf_terms} on page \pageref{ex:field_leaf_terms}, transforming the formula $\phi \equiv \mathsf{let\ p(r) = r.url = "url.tld" \land r.user.name =}$ \\ $\mathsf{"alice"\ in\ Request(r) \land p(r)}$ results in a semantically equivalent formula $\psi \equiv \mathsf{let\ p(a, b) = a = "url.tld" \land b = "alice"\ in\ Request(r) \land p(r.url, r.user.name)}$.
+\end{example}
+
+
+\subsection{Compilation to MFODL}
+\label{sec:compilation}
+This section describes the compilation process to form an MFODL formula from a complex typed formula, such that the compiled formula retains its semantics according to the temporal structure $\mathcal{D}^P$. We look at each affected type of formula separately:
+
+\paragraph{Compilation of custom sorts and projections}
+We first realize that certain MFODL operators defined in Figure \ref{fig:mfodl_operator_semantics}, such as quantifiers, aggregations, and let-statements, create a new variable scope by introducing mappings to the valuation $v$ for new variables. If a newly introduced mapping overwrites an existing mapping, we denote the original mapping as shadowed. We call the formula $f'$ the scope of a variable $a$ whenever the mapping for $a$ in $v$ is initially introduced in $f'$. The scope of a free variable of an input formula $f$ ranges over the whole formula $f$. We also declare $\Lambda^{\phi}_f$ to be the set of all subformulas of $\phi$ of the form $f$.
+
+Referring to the operational semantics of MFODL declared in Figure \ref{fig:mfodl_operator_semantics}, the formula $s(t)$ for some custom sort $s$ is satisfied at time point $i$ of temporal structure $\rho = (\tau_i, \mathcal{D}_i)_{i \in \mathds{N}}$ whenever $v(t) \in \mathds{O}^{\mathcal{D}_i}$ is satisfied. For every scope $\phi$ of variable $t$, consisting of one or multiple subformulas of the form $s(t)$ and $s$ equal to the sort of $t$, we propose a semantically equivalent formula $\psi \equiv \exists \vec{v} .\ \chi$ such that $\delta, v, i \models_{\rho} \phi \iff \delta, v, i \models_{\rho^P} \psi$ is satisfied, where $\rho^P$ refers to the transformed temporal structure from Section \ref{sec:transform_temp_structure}, $\vec{v}$ refers to a vector of variables, and $\chi$ to a new formula defined below. We only consider cases where $t$ refers to a variable term. Any other type of term can be assigned to a variable first.
+
+To define $\vec{v}$, we declare a function $path: \mfodlTerms \to \mfodlVars$ that maps a projection term to a variable by the following rules, where $\cdot$ is used as concatenation operator such that the resulting variable for a given tuple $(o, f)$ is unique in $\mfodlVars$:
+\begin{align*}
+	path(o.f) & =  path(o) \cdot f & \text{ for some projection term } o.f \\
+	path(v)   & =  v               & \text{ for some variable term } v
+\end{align*}
+$\vec{v}$ can then be described as $\left[\bigcup_{s(t) \in \Lambda^{\phi}_{s(t)}} \mathds{F}_t\right] \mfodlImage \lambda p.\ path(p)$, where we first gather the projections of the recursive fields of each variable $t$ of all subformulas of the form $s(t)$ in $\phi$, and finally map them to a set of variables using the mapping $path$ defined above.
+
+For the definition of $\chi$, we first define a mapping $g$ from $(\mfodlVars \times \mfodlCustomSorts)$ to a predicate formula: $(v, s) \mapsto s\left(v, path(v.f_1), \dots, path(v.f_k)\right)$ for field names $f_1, \dots f_k \in \dom(S_{def}(s))$, where $s \in R^P$ and the number of arguments of $s$ corresponds to $\iota(s)$. In other words, given a custom sort $\mathsf{S} \{ f_1 : \mfodlString, f_2 : \mfodlInt \}$ and a variable $a$, the resulting formula of $g(S, a)$ is $S(a, a \cdot f_1, a \cdot f_2)$. We also define the set of predicate formulas $\mathds{P}_s[v]$ of a custom sort $s$ and variable $v$, as $\mathds{P}_s[v] = \left\{ g(v, s) \right\} \cup \bigcup_{(n, t) \in S_{def}(s) \text{ where } t \in \mfodlCustomSorts} \mathds{P}_t[v \cdot n]$. To construct $\chi$, we replace every occurrence of subformulas of the form $s(t)$ for a custom sort $s$ in $\phi$ with the formula $\bigwedge_{p \in \mathds{P}_s[t]} p$, and every occurrence of a projection term $p$ in $\phi$ with the variable term $path(p)$.
+\begin{example}
+	\label{ex:compile_custom_sorts}
+	Given custom sorts $\mathsf{Request}\{ \mathsf{url} : \mfodlString, \mathsf{user} : \mathsf{User} \}$, $\mathsf{Report}\{ \mathsf{reason} : \mfodlString, \mathsf{user} : \mathsf{User} \}$ and $\mathsf{User} \{ \mathsf{name} : \mfodlString \}$,
+	the formula\\
+	$\mathsf{Request}(r) \Rightarrow \mfodlEventually_I \exists u .\ \mathsf{Report}(u) \land r.user = u.user$ is compiled to: \\
+	$\exists r\_url, r\_user, r\_user\_name .\ \mathsf{Request}(r, r\_url, r\_user) \Rightarrow \\
+		\mfodlEventually_I \exists u, u\_reason, u\_user .\ \mathsf{Reason}(u, u\_reason, u\_user) \land \\
+		\mathsf{User}(u\_user, u\_user\_name) \land r\_user\_name = u\_user\_name $.
+\end{example}
+
+\paragraph{Compilation of aggregations}
+We currently do not allow grouping by or aggregating over terms of complex sorts. Hence, aggregations do not need to be compiled. To group by terms of complex sorts, users may assign individual fields of primitive sorts to distinct variables instead, as shown in Example \ref{ex:complex_aggregation}.
+
+\begin{example}
+	\label{ex:complex_aggregation}
+	Assuming the custom sorts from example \ref{ex:compile_custom_sorts} on page \pageref{ex:compile_custom_sorts}, we want to count the number of requests per user. To do so, we group requests by their users' properties and count the occurrences of request events per user: $\mathsf{c \leftarrow CNT\ i;\ name\ (\mfodlOnce_{[0,*]} Request(r) \land name = r.user.name \land tp(i))}$.
+
+\end{example}
+
+\paragraph{Compilation of booleans and null}
+\label{sec:compilation_of_bools}
+Unlike CMFODL, MFODL has no support for boolean-valued terms or the constant $\mathsf{null}$. We instead regard booleans in MFODL as integers and compile the constant term \code{false} to the integer value $0$ and \code{true} to the value $1$: $comp_{bool} : \mfodlBool \to \mfodlInt := c \mapsto 0 \text{ if } c = \mathsf{False} \text{, else } 1.$ Based on the derivation rules for terms in Figure \ref{fig:term_type_rules}, the only operation applicable on terms of sort $\mfodlBool$ is equality (rule \textsc{Eq}). And indeed, $\forall c_1, c_2 \in \mfodlBool .\ c_1 = c_2 \leftrightarrow comp_{bool}(c_1) = comp_{bool}(c_2)$. Similarly, we compile every $\mathsf{null}$ constant to the integer $0$ and apply the same proof idea for correctness.
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "thesis"
+%%% End:

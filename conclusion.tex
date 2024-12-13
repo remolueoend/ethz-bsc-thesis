@@ -1,0 +1,25 @@
+\chapter{Conclusion}
+
+\MonPoly and MFODL provide a broad set of features, including real-time monitoring, global quantification, regular expressions over program traces, and SQL-like aggregation operators. While JSON-formatted application logs have become ubiquitous, allowing systems to output events as arbitrary complex data structures, both \MonPoly and MFODL lack support for custom event data types.
+
+In this work, we extended \MonPoly's specification language MFODL to support compound domain values of custom product sorts. Most importantly, the extension is backward compatible, so all MFODL formulas are valid CMFODL formulas. The extension allows projection on nested fields and adds support for Boolean constants. Therefore, CMFODL can be used to formulate specifications on parametrized program traces, where the domain of supported event data covers all possible JSON documents, except for lists. Combined with transforming temporal structures and compiling of CMFODL to MFODL formulas implemented as an extension to \MonPoly, this allows users to monitor arbitrary JSON logs without or only minimal preprocessing involved. By avoiding complex log preprocessing, an additional possible source of errors in the monitoring pipeline can be avoided. Finally, the extension to \MonPoly is backward compatible with signature files and log files written for earlier versions of \MonPolyN.
+
+In conclusion, the fact that we can compile CMFODL formulas and complex-typed temporal structures such that \MonPoly can monitor them implies that CMFODL is generally not more expressive than MFODL. Instead, it offers a more comprehensible interface for users to formulate specifications over JSON logs, therefore reducing the risk of introducing errors in the specifications.
+
+\section{Future work}
+This section discusses open questions and extensions of the work presented in this thesis.
+
+\subsection{Temporal invariant object references}
+A large part of the current compilation process of CMFODL formulas, namely the preprocessing, is only required because identifiers assigned to objects are only locally unique. Section \ref{sec:local_vs_global_idents} compares this approach with other strategies, namely globally unique identifiers. More generally, making references between objects invariant to time would allow us to simplify the compilation process and the complexity of output formulas. Future projects may research suitable data structures for storing mappings between object identifiers and object instances that can be garbage-collected based on the temporal scope of an input formula.
+
+\subsection{Sum Types}
+Example \ref{ex:null_match} on page \pageref{ex:null_match} shows how we can make use of the sort match algorithm described in Section \ref{sec:match_custom_sorts} to pattern-match against field values of different sorts. Nevertheless, this approach is limited to top-level sorts and may decrease the readability of signatures as soon as deeply nested data structures are involved. The concept of sum types may improve on this by allowing users to declare a custom sort as an untagged or tagged (disjoined) union. As an example, one could declare the sort of a field as $\mathsf{string \mid null}$ (untagged) or $\mathsf{Ok\ of\ Result \mid Err\ of\ Error}$ for some custom sorts $\mathsf{Result},\ \mathsf{Error}$ (tagged). This extension would need to be accompanied by a syntax extension of CMFODL, allowing users to match against different variants in formulas to extract the actual value during runtime. Possible challenges may arise for matching untagged JSON values against variants of sum types and the compilation to a safe MFODL formula, such that it is monitorable by the current implementation of \MonPolyN.
+
+\subsection{Support for list sorts}
+The extension of MFODL and \MonPoly presented in this thesis does not support list-like sorts. Therefore, JSON arrays part of an input log file are ignored during parsing and cannot be accessed in a CMFODL formula. Representing elements of lists as tuples of relations can be solved similarly to the solution presented for product sorts in Section \ref{sec:transform_temp_structure}, namely by normalizing the relations. In the case of lists, elements of a list can be stored in a separate relation, where each tuple represents an element and contains an additional reference pointing to the tuple owning the list. Exposing the content of a list in formulas might be more challenging. Local quantification over the domain of elements in a list, as introduced by \textsc{ParTraP} \cite{bleinExtendingSpecificationPatterns2018} and others, would be useful but requires significant changes to the underlying monitor system. Another approach may provide a generalized fold function over the domain of a list. Eventually, lists of unbounded size introduce separate challenges to normalizing relations.
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "thesis"
+%%% End:

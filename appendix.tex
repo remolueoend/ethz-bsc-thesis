@@ -1,0 +1,28 @@
+\chapter{Utilities}
+
+\section{Minimal JSON log preprocessor}
+\begin{lstlisting}[style=sourcecode,language=bash, caption=minimal JSON log preprocessor shell script, label=code:minimal_json_preprocessor]
+#!/usr/bin/env sh
+
+# Usage: extract-ts.sh <TIMESTAMP_PATH>
+#
+# Formats the content of a JSON log file to be passed to MonPoly.
+# The passed JSON path to the timestamp of each log entry follows
+# the syntactic rules described at:
+# https://stedolan.github.io/jq/manual/#Basicfilters
+#
+# Example:
+# cat json.log | extract-ts.sh ".path.to.timestamp" | monpoly
+# 
+# Dependencies:
+# jq : JSON CLI utility
+
+# exit on error, undefined var, pipefail
+set -euo pipefail
+
+json_path="$1"
+while read line; do
+    ts=$(printf '%s\n' "$line" | jq "$json_path")
+    printf '@%s %s\n' "$ts" "$line"
+done
+\end{lstlisting}

@@ -1,0 +1,151 @@
+%% Custom commands
+%% ===============
+
+%% Special characters for number sets, e.g. real or complex numbers.
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\K}{\mathbb{K}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Q}{\mathbb{Q}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\X}{\mathbb{X}}
+\newcommand{\ebnfr}[1]{\;\mathsf{#1}\;}
+\newcommand{\ebnft}[1]{\texttt{\textbf{#1}}}
+\newcommand{\code}[1]{\texttt{\justify #1}}
+
+%% Fixed/scaling delimiter examples (see 'mathtools' documentation)
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}
+\DeclarePairedDelimiter\norm{\lVert}{\rVert}
+
+%% Use the alternative epsilon per default and define the old one as \oldepsilon
+\let\oldepsilon\epsilon
+\renewcommand{\epsilon}{\ensuremath\varepsilon}
+
+%% Also set the alternate phi as default.
+\let\oldphi\phi
+\renewcommand{\phi}{\ensuremath{\varphi}}
+
+%% MFODL report commands %%
+\newcommand{\mfodlseq}[2][]{\Gamma #1 \vdash #2}
+\newcommand{\mfodlseqd}[3]{\Delta #1; \ \Gamma #2 \vdash #3}
+\newcommand{\mfodlImage}{\mathbin{\text{`}}}
+
+\newcommand{\mfodlfstr}[1]{\mathsf{regex\_of\_str}(#1)}
+\newcommand{\mfodlfrts}[1]{\mathsf{str\_of\_regex}(#1)}
+\newcommand{\mfodlffti}[1]{\mathsf{int\_of\_float}(#1)}
+\newcommand{\mfodlfitf}[1]{\mathsf{float\_of\_int}(#1)}
+
+\newcommand{\mfodlstr}[1]{\mathsf{s2r}(#1)}
+\newcommand{\mfodlrts}[1]{\mathsf{r2s}(#1)}
+\newcommand{\mfodlfti}[1]{\mathsf{f2i}(#1)}
+\newcommand{\mfodlitf}[1]{\mathsf{i2f}(#1)}
+\newcommand{\mfodlp}[1]{\mathsf{#1}}
+\newcommand{\mfodlfv}[1]{\mathsf{fv}(#1)}
+\newcommand*{\mfodlPrev}{\mathop{\CIRCLE}\nolimits}
+\newcommand*{\mfodlNext}{\mathop{\Circle}\nolimits}
+\newcommand*{\mfodlSince}{\mathbin{\mathsf{S}}}
+\newcommand*{\mfodlUntil}{\mathbin{\mathsf{U}}}
+\newcommand*{\mfodlAlways}{\operatorname{\square}}
+\newcommand*{\mfodlPAlways}{\operatorname{\blacksquare}}
+\newcommand*{\mfodlEventually}{\operatorname{\lozenge}}
+\newcommand*{\mfodlOnce}{\operatorname{\blacklozenge}}
+\newcommand*{\mfodlLetin}[3]{\mathbin{\mathsf{let}} \ #1 = #2
+  \mathbin{\mathsf{in}} #3}
+\newcommand{\mfodlsubs}{\mathsf{\xLeftarrow{\!\!\!\!\!\!\!\!\!S\!\!\!\!\!\!\!\!\!}}}
+\newcommand{\mfodlmatches}{\mathsf{\xLeftarrow{\!\!\!\!\!\!\!\!\!RE\!\!\!\!\!\!\!\!\!}}}
+\newcommand{\mfodlTRIANGLERIGHT}{\tikz[baseline=-2.5pt,outer sep=1pt]{\draw[scale=0.06] (0,2) -- (3.2,0) -- (0,-2) -- cycle;}}
+\newcommand{\mfodlTRIANGLELEFT}{\tikz[baseline=-2.5pt]{\draw[scale=0.06, fill=black] (0,0) -- (3.2,2) -- (3.2,-2) -- cycle;}}
+\newcommand{\mfodlmatchMF}[2]{\TRIANGLERIGHT_{#2}\;{#1}}
+\newcommand{\mfodlmatchMP}[2]{\!{\TRIANGLELEFT\,}_{#2}\;{#1}}
+
+\newcommand*{\mfodlTerms}{\mathsf{Terms}}
+\newcommand*{\mfodlFormulas}{\mathsf{Formulas}}
+\newcommand{\mfodlTypeOf}[1]{\mathsf{type\_of}_{\Gamma}(#1)}
+
+\newcommand*{\mfodlInt}{\mathsf{Z}}
+\newcommand*{\mfodlFloat}{\mathsf{F}}
+\newcommand*{\mfodlBool}{\mathsf{B}}
+\newcommand*{\mfodlNull}{\mathsf{Null}}
+\newcommand*{\mfodlString}{\mathsf{Str}}
+\newcommand*{\mfodlRegex}{\mathsf{RE}}
+
+
+\newcommand*{\mfodlNat}{\mathbb{N}}
+\newcommand*{\mfodlIntDom}{\mathbb{Z}}
+\newcommand*{\mfodlFloatDom}{\mathbb{F}}
+\newcommand*{\mfodlStringDom}{\mathbb{S}}
+\newcommand*{\mfodlRegexDom}{\mathbb{RE}}
+
+
+\newcommand*{\mfodlD}{\mathcal{D}}
+\newcommand*{\mfodlPrimitiveSorts}{\mathsf{PS}}
+\newcommand*{\mfodlCustomSorts}{\mathsf{CS}}
+\newcommand*{\mfodlSchemas}{\mathsf{Sch}}
+\newcommand*{\mfodlSorts}{\mathsf{S}}
+\newcommand*{\mfodlDomain}{\mathbb{D}}
+\newcommand*{\mfodlDatabases}{\mathbb{DB}}
+
+
+\newcommand*{\mfodlVars}{\mathsf{V}}
+\newcommand*{\mfodlNames}{\mathsf{N}}
+\newcommand*{\mfodlIntervals}{\mathsf{I}}
+
+\newcommand*{\mfodlSig}{\Delta}
+\newcommand*{\mfodlSigSorts}{S}
+\newcommand*{\mfodlSigSdefs}{S_{\mathrm{def}}}
+\newcommand*{\mfodlSigConsts}{C}
+\newcommand*{\mfodlSigPreds}{P}
+\newcommand*{\mfodlpto}{\rightharpoonup}
+\DeclareMathOperator{\dom}{dom}
+\DeclareMathOperator{\ran}{ran}
+\DeclareMathOperator{\enum}{enumerate}
+
+\newcommand{\mfodlclsymb}{\downarrow}
+\newcommand{\mfodlcl}[1]{\mathsf{\mfodlclsymb{#1}}}
+\newcommand{\mfodlNumTcls}{\mathsf{Num}}
+\newcommand{\mfodlAnyTcls}{\mathsf{Any}}
+\newcommand{\mfodlOrdTcls}{\mathsf{Ord}}
+\newcommand{\mfodlProdTcls}[1]{\mathsf{Prod[\mathcal{#1}]} }
+\newcommand{\mfodlTyCls}{\mathsf{Cls} }
+\newcommand{\mfodlTy}{\mathsf{Ty} }
+\newcommand{\mfodlTCst}{\mathsf{TCst} }
+\newcommand{\mfodlTSymbOf}[1]{\mathsf{TSymb[#1]} }
+\newcommand{\mfodlTSymb}{\mathsf{TSymb} }
+
+\newcommand{\mfodlTAny}{\mfodlTSymbOf{Any}}
+
+\newcommand{\mfodlaggcnt}{\mathsf{CNT}}
+\newcommand{\mfodlaggsum}{\mathsf{SUM}}
+\newcommand{\mfodlaggavg}{\mathsf{AVG}}
+\newcommand{\mfodlaggmed}{\mathsf{MED}}
+\newcommand{\mfodlaggmin}{\mathsf{MIN}}
+\newcommand{\mfodlaggmax}{\mathsf{MAX}}
+\newcommand{\precop}{\preceq}
+
+%% inference rule commands:
+\newcommand{\irSeq}[2][]{\Gamma #1 \vdash #2}
+\newcommand{\irSeqd}[3]{\Delta #1; \ \Gamma #2 \vdash #3}
+\newcommand{\TRIANGLERIGHT}{\tikz[baseline=-2.5pt,outer sep=1pt]{\draw[scale=0.06] (0,2) -- (3.2,0) -- (0,-2) -- cycle;}}
+\newcommand{\TRIANGLELEFT}{\tikz[baseline=-2.5pt]{\draw[scale=0.06, fill=black] (0,0) -- (3.2,2) -- (3.2,-2) -- cycle;}}
+\newcommand{\matchMF}[2]{\TRIANGLERIGHT_{#2}\;{#1}}
+\newcommand{\matchMP}[2]{\!{\TRIANGLELEFT\,}_{#2}\;{#1}}
+
+% allows using '?' (instead of |) as a token for tabular columns:
+\newcolumntype{?}{!{\vrule width 1pt}}
+\newcommand{\Tau}{\mathrm{T}}
+
+% hyphen in math-mode:
+\mathchardef\mhyp="2D
+\newcommand{\p}[1]{\mathsf{#1}}
+
+\newcommand{\MonPoly}{\textsc{MonPoly}\:}
+\newcommand{\MonPolyN}{\textsc{MonPoly}}
+
+% used for line-breaks in \texttt :
+\newcommand*\justify{%
+  \fontdimen2\font=0.4em% interword space
+  \fontdimen3\font=0.2em% interword stretch
+  \fontdimen4\font=0.1em% interword shrink
+  \fontdimen7\font=0.1em% extra space
+  \hyphenchar\font=`\-% allowing hyphenation
+}

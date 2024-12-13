@@ -1,0 +1,24 @@
+\chapter{Monitorability}
+\label{chap:monitorability}
+
+This chapter elaborates on monitorable formulas and lifting the monitorability property from MFODL to CMFODL.
+
+As mentioned in Section \ref{sec:backgroun_monpoly}, \MonPoly only supports monitoring a syntactic fragment of MFODL formulas. The formulas in the fragment are referred to as \emph{safe}. Therefore, \MonPoly needs to initially verify the monitorability of a given input formula. Besides validating the well-formedness of a formula, as presented in Chapter \ref{chap:type_checking}, and ensuring that all future intervals of temporal operators are finitely bounded, the monitorability check must verify that all intermediate results are finite when evaluating the input formula bottom-up. In other words, all relation operations corresponding to the semantics of the involved subformulas must result in finite relations.
+
+Technically, the existing monitorability checks for MFODL formulas can still be run on formulas compiled from CMFODL formulas. By doing so, the user-facing error messages are related to the compiled formula instead of the original CMFODL formula. To improve the user experience, we lift the monitorability rules to CMFODL formulas as a stricter approximation of the existing rules for MFODL formulas. This way, whenever a compiled CMFODL formula is considered safe, the monitoring process continues independently of the monitorability verdict on the CMFODL formula. Otherwise, the monitorability check on the CMFODL input formula is also guaranteed to fais, providing improved user feedback.
+
+To implement a stricter approximation of the monitorability rules for CMFODL formulas, we generalize the function $\mathsf{tvars:\ term\ \to var\ list}$, that returns the set of free variables for a given term, with the function $\mathsf{ctvars}$: for every free variable of some complex sort, all leaves of the variable are considered to be free variables too.
+
+\begin{proposition}
+	\label{prop:monitorability}
+	Given a function $\mathsf{m: (term \to var\ list) \to formula \to bool}$, \\which returns a monitorability verdict for a given formula and a function returning the free variables of a term, $\mathsf{m(ctvars, f)} \implies \mathsf{m(tvars, f')}$ is satisfied for any formula $f$ and its compiled counterpart $f'$.
+\end{proposition}
+
+In this work, we only provide a proof idea for Proposition \ref{prop:monitorability}: we can prove it by structural induction over the structure of formulas. Base cases cover all non-recursive variants, such as binary arithmetic and equality, where we show that each case satisfies Proposition \ref{prop:monitorability}. Subsequently, we assume Proposition \ref{prop:monitorability} to hold for any formula $f$, and show that this implies the satisfaction of the proposition for each recursive formula on $f$.
+
+One disadvantage of our approach is that the monitorability check on a complex-typed formula might fail for a different reason than the monitorability check of the compiled formula. Because we only output the first of possibly many issues, the user experience may degrade in these cases. This effect is inherited from the existing monitorability check on MFODL formulas, which only reports on the first issue, disregarding the total number of errors.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "thesis"
+%%% End:

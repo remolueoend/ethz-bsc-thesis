@@ -1,0 +1,186 @@
+\chapter{Complex-Typed MFODL}
+\label{chap:complex_data_types}
+
+As outlined in the introduction, \MonPoly makes use of MOFDL as its policy specification language \cite{basinMonPolyMonitoringTool2017}. To support monitoring complex-structured application logs using MFODL policies, we propose the extension CMFODL of MFODL with support for complex data types. Section \ref{sec:extensions_mfold_syntax} describes the abstract syntax of CMFODL, whereas Section \ref{sec:mfodl_semantics} presents the semantics of the newly introduced syntax.
+
+\section{Abstract syntax}
+\label{sec:extensions_mfold_syntax}
+We first introduce the syntax of complex-typed metric first-order dynamic logic (CMFODL). Here we diverge from the commonly used, minimalistic single-sorted definition~\cite{basinMonitoringMetricFirstorder2015} and opt to cover additional details as specified in the monitoring tool \MonPoly~\cite{basinMonPolyMonitoringTool2017}.
+
+A~sorted first-order signature defines constant, function,
+and predicate symbols by enumerating their names and respective sorts.
+Intuitively, a sort describes a subset of domain values
+that will be used to interpret the symbols in the semantics.
+The signature assigns a single sort to each constant symbol.
+Predicate and function symbols require a sequence of sorts that
+characterize their arguments; function symbols have an additional sort for their result.
+Here we opt not to include function symbols in the signature. We incorporate
+them into the syntax and define their sorts indirectly using a type system later.
+
+We fix an infinite set of names $\mfodlNames$ and a set $\mfodlPrimitiveSorts =
+	\{\mfodlInt,\mfodlFloat,\mfodlString,\mfodlRegex,\mfodlBool, \mfodlNull\}$ of
+six primitive sorts: integers ($\mfodlInt$), floats ($\mfodlFloat$), strings ($\mfodlString$), regular expressions ($\mfodlRegex$) booleans ($\mfodlBool$) and the singleton sort $\mfodlNull$ consisting of the single constant value $\mathsf{null}$. We assume that $\mfodlNames$ and $\mfodlPrimitiveSorts$ are disjoint.
+%The set $\mfodlPrimitiveSorts\subseteq\Sorts$ denotes all primitive sorts $\{\mfodlInt,\mfodlFloat,\mfodlString,\mfodlRegex\}$.
+A~sorted first-order signature $\mfodlSig$ is a tuple \((\mfodlSigSorts, \mfodlSigSdefs, \mfodlSigConsts, \mfodlSigPreds)\), %\subseteq 2^{\Sorts}\times
+%2^{\mfodlNames\times\Sorts} \times 2^{\mfodlNames\times \mfodlPrimitiveSorts^*}\).
+where $\mfodlSigSorts$ is a finite subset of $\mfodlNames \cup \mfodlPrimitiveSorts$, presenting the sorts used by the signature.
+The partial mapping $\mfodlSigSdefs$ defines the non-primitive sorts; we will explain it below.
+The partial mapping $\mfodlSigConsts \in \mfodlNames \mfodlpto \mfodlSigSorts$ assigns a sort to each constant symbol.
+The available constant symbols are implicitly given by $\dom(\mfodlSigConsts)$, the domain of $\mfodlSigConsts$.
+Finally, $\mfodlSigPreds \in \mfodlNames \mfodlpto \mfodlPrimitiveSorts^*$ assigns a list of (primitive) sorts
+to each predicate symbol in $\dom(\mfodlSigPreds)$.
+%
+For example, $\mfodlSig =
+	(\mfodlPrimitiveSorts, \emptyset, \{\mathsf{r} \mapsto \mfodlInt\}, \{\mathsf{publish} \mapsto (\mfodlInt),\mathsf{approve} \mapsto (\mfodlInt)\})$ defines the
+signature for a simple reporting system, where relevant predicate symbols correspond to publishing
+and approving reports with integer IDs, and we have an integer constant $\mathsf{r}$.
+There is no custom sort; hence we specified the empty mapping $\emptyset$ for $\mfodlSigSdefs$.
+
+We allow the definition of custom-named sorts in the signature.
+%
+In particular, named products of sorts with named fields can be defined as a custom sort.
+The set of names $\mfodlNames$ can be used for custom sort names and their field
+names.
+The structure of a custom sort is described by a \emph{sort schema}.
+The set $\mfodlSchemas$ of all sort schemas is the smallest set such that if $f$ is a function from a finite (possibly empty) subset of $\mfodlNames$ to $\mfodlNames \cup \mfodlPrimitiveSorts$, then $\Pi f \in \mfodlSorts$. Note that $\Pi$ is just a symbol that marks the schema as a product. We usually write product schemas by enumerating the pairs of field names and their sorts, e.g. $\{n_1: s_1, n_2: s_2, \dots, n_k: s_k\}$ is a product schema with $k$ fields. If $s$ is a sort schema, we write $\ran(s)$ for the set of sort names occurring in $s$. For example, $\ran(\Pi f) = \ran(f)$, the range of $f$. The sort definition $\mfodlSigSdefs$ is now a partial mapping $\mfodlCustomSorts \mfodlpto \mfodlSchemas$ with $\mfodlCustomSorts = \mfodlSigSorts - \mfodlPrimitiveSorts$, subject to a well-formedness constraint. It ensures that all sorts used in sort definitions are defined and that there is no recursion between sorts.
+More precisely, there must be a sequence $S_1 \subset S_2 \subset \cdots \subset S_k$ such that
+\begin{compactitem}
+	\item $S_1 \subseteq \mfodlPrimitiveSorts$,
+	\item $S_k = \dom(\mfodlSigSdefs)$, and
+	\item $S_{i+1}\setminus S_i = \{s_i\}$ for all $i < k$ and some $s_i$, where $\ran(\mfodlSigSdefs(s_i)) \subseteq S_i$.
+\end{compactitem}
+
+Since we allow custom products of sorts, one can easily encode predicate symbols using this more
+general mechanism. We therefore simplify the signature to the triple $(\mfodlSigSorts, \mfodlSigSdefs, \mfodlSigConsts)$.
+For the reporting system example above, the new signature is
+$(\mfodlPrimitiveSorts\cup\{\p{publish},\p{approve}\}, \{\p{publish} \mapsto \{\p{\_1}: \mfodlInt\}, \p{approve} \mapsto \{\p{\_1}: \mfodlInt\}\},
+	\{\p{r} \mapsto \mfodlInt\})$.
+It has two custom sorts, one for each predicate symbol, that are defined as products with a single field $\p{\_1}$.
+In the following, we assume that $\mfodlNames$ contains a name of the form $\p{\_}k$ for every natural number $k \geq 1$.
+Thus we can perform the encoding for predicates of any arity.
+A~sort $s$ such that $\mfodlSigSdefs(s)$ is a product (exclusively) over fields $\p{\_1}$ to $\p{\_}k$ is called a \emph{tuple sort}.
+The particular case of an empty product is also a tuple sort.
+We define the arity $\iota(s)$ of a tuple sort $s$ to be $n$ and leave it undefined for all other sorts.
+
+To define the syntax of formulas, we further fix a countably infinite set \(\mfodlVars\) of variables and the set \(\mfodlIntervals\) of nonempty intervals \([a,b) := \{x \in \mfodlNat \mid a \leq x < b\}\), where \(a \in \mfodlNat\), \(b \in \mfodlNat \cup \{\infty\}\), and \(a < b\). Given a signature $(\mfodlSigSorts,\mfodlSigSdefs,\mfodlSigConsts)$, formulas \(\varphi\) are defined inductively, where $s$, $c$, \(v\), \(n\), \(\bar{v}\), \(\bar{nv}\), and \(I\) range over $\mfodlSigSorts$, $\dom(\mfodlSigConsts)$, $\mfodlVars$, \(\mfodlNames\), \(\mfodlVars^*\),\((\mfodlNames\times\mfodlVars)^*\), and \(\mfodlIntervals\), respectively. Figure \ref{fig:mfodl_syntax_def} formalizes syntax of MFODL, where $\Omega\in\{\mfodlaggcnt,\mfodlaggsum,\mfodlaggavg,\mfodlaggmed,\mfodlaggmin,\mfodlaggmax\}$ stands for an aggregation operator. $t$ relates to terms, $\phi$ to formulas, and $r$ to regular expressions over program traces. Sort $s$ in a subformula of the form $\mfodlLetin{s\{n:t,\ldots, n:t\}}{\phi}{\psi}$ or $\mfodlLetin{n(\bar{v})}{\phi}{\phi}$ cannot occur in $\phi$ or outside of the subformula. Let $\mfodlfv{\phi}$ denote a set of free variables of an MFODL formula $\phi$, defined as usual, whereas the set $\mfodlTerms$ represents the set of all MFODL terms.
+
+
+\begin{figure}
+	\[
+		\begin{array}{r c l l}
+			% c& :: = & i \mid f \mid s &\qquad\qquad\qquad\quad\!//\text{ Constants}\\
+			t    & :: = & c \mid v \mid \mfodlfti{t} \mid \mfodlitf{t} \mid \mfodlrts{t} \mid \mfodlstr{t} \mid \mathsf{i2s}(t) \mid \mathsf{s2i}(t) \mid \mathsf{f2s}(t) \mid \mathsf{s2f}(t)                                                                          \\
+			     &      & -t \mid t + t \mid t - t \mid t * t \mid t / t \mid t \% t \mid
+			t.n \mid s\overbrace{\{n:t,\ldots, n:t\}}^{= \mfodlSigSdefs(s)}                                                                                                                                                                                                                   \\
+			\phi & ::=  & s(t)  \mid \mfodlclsymb{s}(t) \mid                                                                                                                                                                                                            \\
+			     &      & \bot \mid \top \mid s(\overbrace{t,\ldots,t}^{\iota(s)}) \mid t \approx t \mid t \prec t \mid t \preceq t \mid t\ \mfodlsubs\ t \mid t\ \mfodlmatches\ t(t,\ldots,t) \mid                                                                     &                     \\
+			     &      & \neg \phi \mid \phi \land \phi \mid  \phi \lor \phi \mid \phi \rightarrow \phi \mid \phi \leftrightarrow \phi \mid \exists\bar{v}.\ \phi \mid  \forall\bar{v}.\ \phi \mid                                                                     &                     \\
+			     &      & \mfodlPrev_I \phi \mid \mfodlNext_I \phi \mid \mfodlOnce_I\phi \mid \mfodlEventually_I\phi \mid \mfodlPAlways_I\phi\mid \mfodlAlways_I\phi\mid\phi\mfodlSince_I \phi \mid \phi \mfodlUntil_I \phi \mid \matchMP{r}{I} \mid \matchMF{r}{I}\mid &                     \\
+			     &      & v \leftarrow \Omega \ v; \bar{v} \ \phi\mid \mfodlLetin{s\overbrace{\{n:v,\ldots, n:v\}}^{= \mfodlSigSdefs(s)}}{\phi}{\phi}\mid \mfodlLetin{n(\bar{v})}{\phi}{\phi}                                                                           &                     \\
+			r    & ::=  & \cdot \mid \phi? \mid r \ r \mid r + r \mid r^*                                                                                                                                                                                               
+		\end{array}
+	\]
+	\caption{MFODL syntax definition}
+	\label{fig:mfodl_syntax_def}
+\end{figure}
+
+
+\section{Semantics}
+\label{sec:mfodl_semantics}
+MFODL formulas are interpreted over \emph{temporal structures (TS)}, which model timestamped and totally ordered sequences of observations.
+
+Given a signature $\Delta$, each observation in TS consists of a timestamp and a finite first-order $\Delta$-structure $\mathcal{D}$, which interprets (i.e., associates appropriate values to) the elements of the signature. In $\mathcal{D}$ each sort $s\in S$ is interpreted with a nonempty domain $d$ of values each tagged with its sort, i.e., $s^{\mathcal{D}} = d \mfodlImage \lambda e.\; (s, e)$. In particular, primitive sorts have the expected domains: the sort of integers is interpreted as the set of tagged integers ($\mfodlInt^{\mathcal{D}}=\mfodlIntDom$). Similar holds for floats ($\mfodlFloat^{\mathcal{D}}=\mfodlFloatDom$), strings ($\mfodlString^{\mathcal{D}}=\mfodlStringDom$), and regular expressions ($\mfodlRegex^{\mathcal{D}}=\mfodlRegexDom$). The interpretation function $\cdot^{\mathcal{D}}$ is lifted for set operations like unions and products. To define the interpretation of a custom product sort $s \in \mfodlSigSorts-\mfodlPrimitiveSorts$, we define $\mfodlSigSdefs(s)=\Pi f$ as $\left[\prod_{n\in \dom(f)} f(n)^{\mathcal{D}} \right] \mfodlImage \lambda e.\; (s, e)$.
+
+Given a signature $\Delta = (S, S_{def}, C)$, the finite first-order $\Delta-$structure is the triple
+$\mathcal{D}=(\mfodlDomain, \mathbb{C}, \mathbb{O})$ where $\mfodlDomain=\bigcup_{s\in S} s^\mathcal{D}$ is
+union of values of all domains. For every $(c,s)\in C$ we have $c^\mathcal{D}\in s^\mathcal{D}$ in
+$\mathbb{C}$ and we have a finite set of objects $\mathbb{O}\subseteq \mfodlDomain$. We denote a closure of
+$\mathbb{O}$ with respect to the projection operator ($.$) as the smallest set
+$\mathbb{O}\downarrow$ such that:
+\begin{compactitem}
+	\item $\mathbb{O}\subseteq \mathbb{O}\downarrow$
+	\item if $(e,f)\in \mathbb{O}\downarrow$ then $o\in \mathbb{O}\downarrow$ for all $(\_,o)\in f$
+\end{compactitem}
+
+A temporal structure \(\rho\) is then an infinite sequence (or a stream) \((\tau_i, \mathcal{D}_i)_{i \in \mfodlNat}\) of finite first-order $\Delta$-structures $\mathcal{D}_i$ with associated time-stamps $\tau_i$. We refer to a component of a structure at a specific time-point $i$ using a subscript (e.g., $\mathbb{D}_i$). All finite first-order $\Delta$-structures $\mathcal{D}_i$ agree on their sorts ($\forall i.\ \forall s\in S.\ s^{\mathcal{D}_{i}}=s^{\mathcal{D}_{i+1}}$) and constant interpretations ($\forall i.\ \mathbb{C}_{i}=\mathbb{C}_{i+1}$). Since they agree on their sorts, they also agree on their domains ($\forall i.\ \mfodlDomain_i=\mfodlDomain_{i+1}$), When referring to these common components in a TS, we omit the reference to a particular time-point (e.g., we write just $\mfodlDomain$).
+
+Time-stamps are discrete, modeled as natural numbers \(\tau_i \in \mfodlNat\). We allow the event source to use finitely precise clocks:
+structures at different time-points $i \neq j$ may have the same time-stamp $\tau_i = \tau_j$. The sequence of time-stamps must be non-strictly increasing ($\forall i.\;\tau_i \leq \tau_{i+1}$) and always eventually strictly increasing ($\forall \tau.\;\exists i.\ \tau < \tau_i$).
+
+The valuation \(v\) is a mapping \(\mfodlVars \to \mfodlDomain\), assigning domain elements to variables. Overloading notation, $v$ can be applied to terms:
+\begin{compactitem}
+	\item $v(c)\in \mfodlDomain$;
+	\item $v(\mfodlfti{t})=\mfodlffti{v(t)}$; $v(\mfodlitf{t})=\mfodlfitf{v(t)}$;
+	\item $v(\mfodlrts{t})=\mfodlfrts{v(t)}$; $v(\mfodlstr{t})=\mfodlfstr{v(t)}$;
+	\item $v(\mathsf{i2s}(t))=\mathsf{int\_to\_str}(v(t))$; $v(\mathsf{s2i}(t))=\mathsf{str\_to\_int}(v(t))$;
+	\item $v(\mathsf{f2s}(t))=\mathsf{float\_to\_str}(v(t))$; $v(\mathsf{s2f}(t))=\mathsf{str\_to\_float}(v(t))$;
+	\item $v(-t)=-v(t)$;
+	\item $v(t\bowtie t')=v(t)\bowtie v(t')$ for $\bowtie\in \{+,-,*,/,\%\}$;
+	\item $v(t.f) = d$ if $v(t) = (n,o)$ and $(f,d)\in o$.
+	\item $v(s\{n_1:t_1,\ldots,n_k:t_k\}) = (s,\{(n_i,v(t_i)) \mid i = 1,\ldots, k\})$
+\end{compactitem}
+
+We write \(v[x \mapsto y]\) for the function equal to \(v\), except that the argument \(x\) is mapped to \(y\). For a vector of free variables $\bar{u}=[u_1,\ldots,u_k]$, we write \(v(\bar{u})\) for the tuple \((v(u_1),\ldots v(u_k))\). We also define a let mapping $\delta$ as a partial function $\delta:\mfodlNames \rightharpoonup (\mfodlNat \rightarrow 2^{\mfodlDomain})$.
+
+Figure \ref{fig:mfodl_operator_semantics} describes the semantics of the operators defined in the MFODL syntax. The relation \(\delta, v,\,i \models_\rho \varphi\) defines the satisfaction of the formula \(\varphi\) for a let mapping $\delta$, valuation $v$, and a time-point \(i\) with respect to the temporal structure $\rho$. Whenever~$\rho$ is fixed and clear from the context, we omit the subscript on $\models$. We focus only on the core subset of the operators, while the rest of the operators are shorthands. Temporal operators with no interval have $[0,\infty)$ instead.
+
+\begin{figure}
+	\[
+		\begin{array}{@{}ll@{\;\;}@{\;\;}ll@{}}
+			\delta,\,v,\,i \models s(t)                                   & \text{iff } v(t)=(s,\_) \text{ and if } \delta(\p{s})(i) \neq \bot \text{ then }                                                   \\ & v(t)\in\delta(\p{s})(i) \text{ else } v(t)\in \mathbb{O}^{\mathcal{D}_i}                     &  & \\
+			\delta,\,v,\,i \models \mfodlcl{s}(t)\qquad\qquad\quad        & \text{iff } v(t)=(s,\_) \text{ and if } \delta(\p{s})(i) \neq \bot \text{ then }                                                   \\ & v(t)\in\delta(\p{s})(i)\downarrow \text{ else } v(t)\in \mathbb{O}^{\mathcal{D}_i}\downarrow &  & \\
+
+			\delta,\,v,\,i \models t \approx t'                           & \text{iff } v(t) = v(t')                                                                                                     &   & \\
+			\delta,\,v,\,i \models t \preceq t'                           & \text{iff } v(t) \leq v(t')                                                                                                  &   & \\
+			\delta,\,v,\,i \models t \mfodlmatches\; t' (t_1,\ldots, t_n) & \text{iff } v(t) \text{ matches } v(t')
+			\text{with capture group } i \text{ valued as } v(t_i)        &                                                                                                                              &     \\
+			\delta,\,v,\,i \models \lnot \varphi                          & \text{iff } \delta,\,v,\,i \not\models \varphi                                                                               &   & \\
+			\delta,\,v,\,i \models \varphi \land \psi                     & \text{iff } \delta,\,v,\,i \models \varphi \text{ and } \delta,\,v,\,i \models \psi                                          &   & \\
+			\delta,\,v,\,i \models \exists x.\;\varphi                    & \text{iff } \delta,\,v[x \mapsto z],\,i \models \varphi \text{ for some \(z \in \mfodlDomain\)}                              &   & \\
+			\delta,\,v,\,i \models \mfodlPrev_I \varphi                   & \text{iff \(i > 0\), \(\tau_i - \tau_{i-1} \in I\), and } \delta,\,v,\,i-1 \models \varphi                                   &   & \\
+			\delta,\,v,\,i \models \mfodlNext_I \varphi                   & \text{iff \(\tau_{i+1} - \tau_i \in I\) and } \delta,\,v,\,i+1 \models \varphi                                               &   & \\
+			\delta,\,v,\,i \models \varphi \mfodlSince_I \psi             & \multicolumn{3}{l@{}}{\text{iff } \delta,\,v,\,j \models \psi \text{ for some \(j \leq i\), \(\tau_i - \tau_j \in I\),}}           \\
+			                                                              & \text{and } \delta,\,v,\,k \models \varphi \text{ for all \(k\) with \(j < k \leq i\)}                                       &   & \\
+			\delta,\,v,\,i \models \varphi \mfodlUntil_I \psi             & \multicolumn{3}{l@{}}{\text{iff } \delta,\,v,\,j \models \psi \text{ for some \(j \geq i\), \(\tau_j - \tau_i \in I\), }}          \\
+			                                                              & \text{and } \delta,\,v,\,k \models \varphi \text{ for all \(k\) with \(i \leq k < j\)}                                       &   & \\
+			\delta,\,v,\,i \models \mfodlLetin{s\{\bar{nu}\}}{\phi}{\psi} & \multicolumn{3}{l@{}}{\text{iff } \delta[s \rightarrow f],\,v,\,i \models \psi\text{ where} }                                      \\
+			                                                              & f=\lambda i.\{(s,\{n_1:w(u_1),\ldots,n_k:w(u_k)\}) \mid \delta,\,w,\,i \models \phi\}                                        &   & \\
+			\delta,\,v,\,i \models \matchMP{r}{I}                         & \multicolumn{3}{l@{}}{\text{iff } \tau_j - \tau_i \in I \text{ and } (i, j)\in \mathcal{R}(r) \text{ for some } j \geq i   }       \\
+			\delta,\,v,\,i \models \matchMF{r}{I}                         & \multicolumn{3}{l@{}}{\text{iff } \tau_i - \tau_j \in I \text{ and } (j, i)\in \mathcal{R}(r) \text{ for some } j \leq i   }       \\
+		\end{array}
+	\]
+	\[
+		\begin{array}{@{}ll@{\;\;}@{\;\;}ll@{}}
+			\mathcal{R}(\star)     & = \{ (i, i+1) \mid i \in \mathds{N} \}                                                                                                                                         \\
+			\mathcal{R}(\phi?)     & = \{ (i, i) \mid \delta,\ v,\ i \models \phi \}                                                                                                                                \\
+			\mathcal{R}(r + s)     & = \mathcal{R}(r) \cup \mathcal{R}(s)                                                                                                                                           \\
+			\mathcal{R}(r \cdot s) & = \left\{ (i, k) \mid \exists j.\ (i,j) \in \mathcal{R}(r) \text{ and } (j,k) \in \mathcal{R}(s) \right\}                                                                      \\
+			\mathcal{R}(r*)        & = \left\{ (i, i) \mid i \in \mathds{N} \right\} \cup \left\{ (i_0,i_k) \mid \exists i_1,\dots, i_k .\ (i_j, i_{j+1}) \in \mathcal{R}(r) \text{ for all } 0 \leq j < k \right\}
+		\end{array}
+	\]
+	$x \prec y := x \preceq y \land \neg x \approx y$,
+	$\bot := 0 \approx 1$,
+	$\top := \neg \bot$,
+	$\p{s}(t_1,\ldots,t_n) = \p{s}(\p{s}\{\p{\_1}:t_1,\ldots,\p{\_n}:t_n\})$,
+	$t\ \mfodlsubs\ t' := t\ \mfodlmatches\; t'()$,
+	$\varphi \lor \psi := \neg \varphi \land \neg \psi$,
+	$\varphi \rightarrow \psi := \neg \varphi \vee \psi$,
+	$\varphi \leftrightarrow \psi := \varphi \rightarrow \psi \land \psi \rightarrow \varphi$,
+	$\forall x.\, \varphi := \neg \exists x.\, \neg \varphi$,
+	$\mfodlOnce_I \varphi := \top \mfodlSince_I \varphi$,
+	$\mfodlEventually_I \varphi := \top \mfodlUntil_I \varphi$,
+	$\mfodlAlways_I \varphi := \neg \mfodlEventually_I \neg \varphi$,
+	$\mfodlPAlways_I \varphi := \neg \mfodlOnce_I \neg \varphi$, and
+	$\mfodlLetin{\p{p}(t_1,\ldots,t_n)}{\phi}{\psi} := \mfodlLetin{\p{p}(\{\p{\_1}:t_1,\ldots,\p{\_n}:t_n\})}{\phi}{\psi}$.
+	\caption{MFODL operator semantics}
+	\label{fig:mfodl_operator_semantics}
+\end{figure}
+
+
+
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "thesis"
+%%% End:

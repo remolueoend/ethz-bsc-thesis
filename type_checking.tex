@@ -1,0 +1,279 @@
+\chapter{Type Checking}
+\label{chap:type_checking}
+
+This chapter specifies the concept of well-formed CMFODL formulas and explains in more detail how type checking and type inference are implemented in \MonPolyN.
+
+\section{Well-typed terms and well-formed formulas}
+
+Notice that the current definition of the CMFODL syntax described in Section \ref{sec:extensions_mfold_syntax} allows for
+writing formulas that do not have well-defined semantics. For example, $x\approx y \land (x \prec 3) \land (y \approx "two")$. Ideally, we would like to recognize such formulas as malformed and reject them.
+
+Well-formed CMFODL formulas have well-typed terms. Here type and sort are synonymous.
+We use the following type-language for the CMFODL terms:
+
+\begin{center}
+	$
+		\begin{array}{r c l }
+			T  & ::= & \mfodlInt \mid \mfodlFloat \mid \mfodlString \mid \mfodlRegex \mid \mfodlBool \mid \mfodlNull \mid \mfodlNames\ \{\ FS\ \} \mid \{\ FS\ \} \\
+			FS & ::= & \mfodlNames : T \mid \mfodlNames : T,\ FS
+		\end{array}
+	$
+\end{center}
+The case $\mfodlNames \{\ FS\ \}$ corresponds to named product types, while $\{\ FS\ \}$ corresponds to unnamed product types. We further establish a partial order over unnamed product types as $f_1\leq f_2$ iff $f_2\subseteq f_1$ and between named and unnamed product types as $(e,f)\leq f$.
+
+The set $\mfodlNumTcls{}{}=\{\mfodlInt,\mfodlFloat\}$ is the numeric type class, $\mfodlOrdTcls{}{} = \{\mfodlInt{}{}, \mfodlFloat, \mfodlString, \mfodlRegex\}$ the type class of all totally-ordered types, while
+$\mfodlAnyTcls{}{}$ is the type class of all types. Furthermore, let $\Gamma$ be the symbol table, i.e., the set of bindings $x_i:\tau_i$ representing a partial map from variables to types. Given a symbol table $\Gamma$, an CMFODL term $t$ and a type $\tau$, type judgement $\Gamma \vdash  t :: \tau$ means that $t$ is well-typed in context of $\Gamma$ and has type $\tau$. Figure~\ref{fig:term_type_rules} lists all type inference rules for CMFODL terms.
+
+Similarly, given a predicate schema $\Delta$ and a formula $\phi$ (or temporal regular expression $r$), judgement $\Delta;\ \Gamma \vdash  \phi$ (or $\Delta; \ \Gamma \vdash  r$) means that $\phi$ (or $r$) is a well-formed formula (or temporal regular expression) in context of $\Delta$ and $\Gamma$. Given fresh (i.e. not in $\Gamma$) types $\tau,\tau_1,\ldots,\tau_n\in\mfodlAnyTcls{}$, and a list of fresh types $\bar{\sigma}\in\mfodlAnyTcls\!\!^*$, typing rules for CMFODL are listed in Figure~\ref{fig:formula_type_rules}. Expression $\bar{zs}:\bar{\sigma}$ is a shorthand for $\{(\bar{zs}[i]: \bar{\sigma}[i]) \mid i\in\{1,\ldots,|\bar{zs}|\}\}$ assuming $|\bar{zs}|=|\bar{\sigma}|$.
+
+When we write $\Gamma,\ x:t$, it means that we pattern match on the current symbol table to assert that it contains the binding $x:t$.
+If we similarly use the signature, we either assert the existence of a predicate symbol (e.g., as in the \textsc{Pred} rule) or the existence of a custom sort (e.g., as in the \textsc{Sort} rule).
+
+\begin{figure}
+	{  \small
+		%\noindent\hrulefill\par
+		\noindent\makebox[\textwidth][c]{%
+			\begin{minipage}{1.4\textwidth}
+				\begin{mathpar}
+					\inferrule*[right={\scriptsize Var}]{\ }{\irSeq[,x:\tau] x::\tau} \and\!
+					\inferrule*[right={\scriptsize Int}]{c\in\mfodlInt}{\irSeq c::\mfodlInt } \and\!
+					\inferrule*[right={\scriptsize Flt}]{c\in\mfodlFloat}{\irSeq c::\mfodlFloat }
+					\\
+					\inferrule*[right={\scriptsize Regex}]{c\in\mfodlRegex}{\irSeq c::\mfodlRegex} \and\!
+					\inferrule*[right={\scriptsize True}]{c = \mathsf{True}}{\irSeq c::\mfodlBool} \and\!
+					\inferrule*[right={\scriptsize False}]{c = \mathsf{False}}{\irSeq c::\mfodlBool}
+					\\
+					\inferrule*[right={\scriptsize Null}]{c = \mathsf{null}}{\irSeq c::\mfodlNull} \and\!
+					\inferrule*[right=\scriptsize UnOp]{\irSeq {t::\tau} \and\! \tau\in \mfodlNumTcls{}{}}{\irSeq -t::\tau} \and\!
+					\inferrule*[right=\scriptsize Proj]{\irSeq {t::\tau'}\and \!
+						\tau' \leq \{n:\tau\}}{\irSeq t.n::\tau}
+					\\
+					\inferrule*[right=\scriptsize f2i]{\irSeq t::\mfodlFloat}{\irSeq \mathsf{f2i}(t)::\mfodlInt}\and \!
+					\inferrule*[right=\scriptsize i2f]{\irSeq t::\mfodlInt}{\irSeq \mathsf{i2f}(t)::\mfodlFloat}\and \!
+					\inferrule*[right=\scriptsize f2s]{\irSeq t::\mfodlFloat}{\irSeq \mathsf{f2s}(t)::\mfodlString}
+					\\
+					\inferrule*[right=\scriptsize s2f]{\irSeq t::\mfodlString}{\irSeq \mathsf{s2f}(t)::\mfodlFloat}\and \!
+					\inferrule*[right=\scriptsize i2s]{\irSeq t::\mfodlInt}{\irSeq \mathsf{i2s}(t)::\mfodlString}\and \!
+					\inferrule*[right=\scriptsize s2i]{\irSeq t::\mfodlString}{\irSeq \mathsf{s2i}(t)::\mfodlInt}
+					\\
+					\inferrule*[right=\scriptsize r2s]{\irSeq t::\mfodlRegex}{\irSeq \mathsf{r2s}(t)::\mfodlString}\and \!
+					\inferrule*[right=\scriptsize s2r]{\irSeq t::\mfodlString}{\irSeq \mfodlstr{t}::\mfodlRegex}
+					\\
+					\inferrule*[right=\scriptsize BinOp ~ {$\oplus\in\{+,-,*,/,\%\}$} ]{\irSeq {t::\tau} \and \!
+					\irSeq{t'::\tau}\!\!\!\!\and\!\!\!\!\tau\in\mfodlNumTcls{}{}}{\irSeq t\oplus t'::\tau}
+				\end{mathpar}
+			\end{minipage}}\\
+	}
+	\caption{Typing rules for MFODL terms}
+	\label{fig:term_type_rules}
+\end{figure}
+
+\begin{figure}
+	{  \small
+		%\noindent\hrulefill\par
+		\noindent\makebox[\textwidth][c]{%
+			\begin{minipage}{1.4\textwidth}
+				\begin{mathpar}
+					\inferrule*[right=\scriptsize Sort ]{\irSeq {t::s\{f\}}}{\irSeqd{,s\{f\}}{}{s(t)}}\and
+					\inferrule*[right={\scriptsize Substring}]{\Gamma \vdash t::\mfodlString \and \Gamma \vdash t'::\mfodlString }{\Delta;\ \Gamma \vdash t\ \mfodlsubs\ t'} \and\!\!\!\!\!\!\!\!\!\!\!\!
+					\\
+					\inferrule*[right={\scriptsize Equal}]{\irSeq {t::\tau} \and \irSeq{t'::\tau}}{\irSeqd{}{}{t = t'}}\and
+					\inferrule*[right=\scriptsize OrdRel ~ {$\bowtie\ \in\{<,\leq\}$} ]{\irSeq {t::\tau} \and \irSeq{t'::\tau} \and \tau \in \mfodlOrdTcls}{\irSeqd{}{}{t\bowtie t'}}
+					\\
+					\inferrule*[right={\scriptsize Match}]{\Gamma \vdash t::\mfodlString \and \Gamma \vdash t'::\mfodlRegex
+						\and \forall i.\ \irSeq {t_i::\mfodlString} }{\Delta;\ \Gamma \vdash t\
+						\mfodlmatches\ t'\ (t_1,\ldots,t_n)}
+					\inferrule*[right=\scriptsize Pred ]{\forall i.\ \irSeq {t_i::\tau_i}}{\irSeqd{,(p,
+							(\tau_1,\ldots,\tau_n))}{}{p(t_1,\ldots, t_n)}}
+					\\
+					\inferrule*[right=\scriptsize UnFma
+							{$\star\in\{\neg,\mfodlPrev_I,\mfodlNext_I,\mfodlOnce_I,\mfodlEventually_I,\mfodlPAlways_I,\mfodlAlways_I,\matchMP{}{I},\matchMF{}{I}\}$}]{\irSeqd{}{}{\phi}}{\irSeqd{}{}{\star\phi}}\and\!\!\!\!\!\!\!\!\!\!\!\!\!\!\!\!\!\!
+					\inferrule*[right=\scriptsize BinFma {$\star\in\{\land,\lor,\rightarrow,\leftrightarrow,\mfodlSince_I,\mfodlUntil_I\}$}]{\irSeqd{}{}{\phi_1}\!\!\! \and\!\!\! \irSeqd{}{}{\phi_2}}{\irSeqd{}{}{\phi_1\star\phi_2}}
+					\\
+					\inferrule*[right=\scriptsize Wild]{\ }{\irSeqd{}{}{\cdot}}\and
+					\inferrule*[right=\scriptsize UnRex ~ {$\star\in\{?,*\}$}]{\irSeqd{}{}{r}}{\irSeqd{}{}{\star   r}}\and
+					\inferrule*[right=\scriptsize BinRex ~ {$\star\in\{+,\ \ \}$}]{\irSeqd{}{}{r_1} \and \irSeqd{}{}{r_2}}{\irSeqd{}{}{r_1\star r_2}}
+					\\
+					\inferrule*[right=\scriptsize Exists]{\irSeqd{}{,v_1:\tau_1,\ldots,v_n:\tau_n}{\phi}}{\irSeqd{}{}{\exists v_1,\ldots,v_n.\ \phi}}\and
+					\inferrule*[right=\scriptsize Forall]{\irSeqd{}{,v_1:\tau_1,\ldots,v_n:\tau_n}{\phi}}{\irSeqd{}{}{\forall v_1,\ldots,v_n.\ \phi}}
+					\\
+					\inferrule*[right=\scriptsize Let ... in]{\Delta; \ v_1:\tau_1,\ldots,v_n:\tau_n \vdash  \phi_1  \and \irSeqd{, (p, (\tau_1,\ldots,\tau_n))}{}{\phi_2} }{\irSeqd{}{}{\mfodlLetin{p(v_1,\ldots,v_n)}{\phi_1}{\phi_2}}}
+					\\
+					\inferrule*[right=\scriptsize Sum]{\irSeq{}{v_1::\tau} \and \irSeq[,\bar{zs}:\bar{\sigma}]{v_2::\tau} \and \irSeqd{}{,\bar{zs}:\bar{\sigma}}{\phi} \and\tau\in\mfodlNumTcls{}\and \bar{zs}=\mfodlfv{\phi}-\bar{vs}}{\irSeqd{}{}{v_1\leftarrow \mfodlaggsum \ v_2;\ \bar{vs} \ \phi}}
+					\\
+					\inferrule*[right=\scriptsize Cnt]{\irSeq{}{v_1::\mfodlInt} \and \irSeq[,\bar{zs}:\bar{\sigma}]{v_2:\tau} \and \irSeqd{}{,\bar{zs}:\bar{\sigma}}{\phi} \and \bar{zs}=\mfodlfv{\phi}-\bar{vs}}{\irSeqd{}{}{v_1\leftarrow \mfodlaggcnt \ v_2;\ \bar{vs} \ \phi}}
+					\\
+					\inferrule*[right=\scriptsize AvgMed ~ {$A\in\{\mfodlaggavg, \mfodlaggmed\}$}]{\irSeq{}{v_1::\mfodlFloat} \and \irSeq[,\bar{zs}:\bar{\sigma}]{v_2:\tau} \and \irSeqd{}{,\bar{zs}:\bar{\sigma}}{\phi} \and\tau\in\mfodlNumTcls{}\and \bar{zs}=\mfodlfv{\phi}-\bar{vs}}{\irSeqd{}{}{v_1\leftarrow A \ v_2;\ \bar{vs} \ \phi}}
+					\\
+					\inferrule*[right=\scriptsize MinMax ~ {$A\in\{\mfodlaggmin, \mfodlaggmax\}$}]{\irSeq{}{v_1::\tau} \and \irSeq[,\bar{zs}:\bar{\sigma}]{v_2:\tau} \and \irSeqd{}{,\bar{zs}:\bar{\sigma}}{\phi} \and\tau\in\mfodlOrdTcls{} \and \bar{zs}=\mfodlfv{\phi}-\bar{vs}}{\irSeqd{}{}{v_1\leftarrow A \ v_2;\ \bar{vs} \ \phi}}
+				\end{mathpar}
+			\end{minipage}}
+	}
+	\caption{Well-formed rules for MFODL formulas}
+	\label{fig:formula_type_rules}
+\end{figure}
+
+\section{Type inference}
+One important feature of CMFODL's type system is its type inference capability. It allows users to write formulas without needing to annotate types of variables and predicate arguments. For example, let us look at the formula $\mathsf{x.f} > \mathsf{a} \land \mathsf{S}(x)$ and the type inference rules of Figure \ref{fig:term_type_rules} and \ref{fig:formula_type_rules}. The type checker may first learn from the sub-formula $\mathsf{x.f} > \mathsf{a}$ that $\mathsf{x}$ is of an instance of some product type $\tau_1$, declaring a field named $\mathsf{f}$ of type $\tau_2 \in \mfodlOrdTcls$. This can be derived by applying the rules \textsc{Proj} from Figure \ref*{fig:term_type_rules} and \textsc{OrdRel} from Figure \ref{fig:formula_type_rules}. It further learns that the variable $\mathsf{a}$ is of type $\tau_2$ too, based on the rule \textsc{OrdRel}. The type checker eventually encounters the sub-formula $\mathsf{S(x)}$. Using inference rule \textsc{Sort}, it learns that $\mathsf{x}$ is in fact of type $\mathsf{S}\ \{\ FS\ \}$ and therefore $\tau_1 = \mathsf{S}\ \{\ FS\ \}$. Finally, the formula is well-typed as long as $FS$ declares a field $\mathsf{f}$ of type $\tau_2$.
+
+The example above should provide an intuition about the problem that CMFODL's type inference tries to solve. We now formalize this process. First, we need to introduce some new definitions:
+
+\begin{definition}
+	Constant types
+\end{definition}
+We formalize a constant type $\tau$ as the set of constant values associated with $\tau$. Therefore, the type $\mfodlString$ represents the infinite set of all string constants, whereas the type $\bot$ represents the empty set. We call $a$ a subtype of $b$ whenever $a \subseteq b$ holds. The set of all constant types is defined as $\mfodlTCst := \{ \mfodlInt, \mfodlFloat, \mfodlString, \mfodlRegex, \mfodlBool, \bot \} \cup \mfodlNames\ \{\ FS\ \}$, where $\mfodlNames\ \{\ FS\ \}$ ranges over all custom product types. Additionally, we declare all constant types in $\mfodlTCst$ as pairwise disjunct: $\forall (o, s) \in \mathds{D}, t, t' \in \mfodlTCst .\ s \in t \land s \in t' \implies t = t'$.
+
+\begin{definition}
+	Type classes
+\end{definition}
+We redefine a type class as a non-empty set of types with the additional constraint, that whenever $a \in \mathsf{A}$ holds for some type $a$ and some type class $\mathsf{A}$, $\forall\ b \subseteq a.\ b \in \mathsf{A}$ holds. Next, we declare the set of all type classes as $\mfodlTyCls := \{ \mfodlAnyTcls, \mfodlNumTcls, \mfodlOrdTcls, \mfodlProdTcls{C} \}$. The newly introduced type class $\mfodlProdTcls{C}$ is parametric on a set $\mathcal{C}$ of constraints on the fields of its product types. We define the elements of this type class in more detail below.
+
+\begin{definition}
+	Symbolic types
+\end{definition}
+We define a symbolic type $\mathsf{TSymb[C]} \subseteq \{(\mathsf{C}, i) \mid i \in \mathds{N}, \mathsf{C} \in \mfodlTyCls \}$ as a set of tuples consisting of a type class and a unique index: $\forall (\mathsf{A}, i), (\mathsf{B}, j) \in \mfodlTSymb : i = j \implies \mathsf{A} = \mathsf{B}$. The set $\mfodlTSymb := \bigcup_{\mathsf{C} \in \mfodlTyCls{}} \mfodlTSymbOf{C}$ represents the set of all symbolic types. Based on these definitions, we declare the set $\mfodlTy := \mfodlTCst \cup \mfodlTSymb$, which consists of all constant and symbolic types.
+
+\begin{definition}
+	The more precise type relation $\precop$
+\end{definition}
+We define the relation $a \precop b$. It is read as \textit{"type a is more or equally precise than type b"}. It is defined on constant types $a, b$ as $a \subseteq b$ and can be lifted to symbolic types as $(\mathsf{A}, i) \precop (\mathsf{B}, j) \iff \mathsf{A} \subset \mathsf{B} \lor \mathsf{A} = \mathsf{B} \land i \leq j$, and to a relation between a constant type $a$ and a symbolic type $(\mathsf{C}, i)$ as $a \precop (\mathsf{C}, i) \iff a \in \mathsf{C}$.
+
+\begin{proposition}
+	\label{prop:precop_is_partial_op}
+	$\precop$ is a partial order relation.
+\end{proposition}
+\begin{proof}
+	In the case of both operands being constant types, $\precop$ is equivalent to $\subseteq$ and therefore, the statement holds. Furthermore, $\forall (A, i) \in \mfodlTSymb .\ (A, i) \precop (A, i) \equiv A \subset A \lor A = A \land i \leq i$ holds, and therefore, $\precop$ is reflexive. In a similar manner, we prove that $\precop$ is anti-symmetric by showing that $(A, i) \precop (B, j) \land (B, j) \precop (A, i) \implies (A, i) = (B, j)$ holds for all $A, B \in \mfodlTSymb$:
+	\begin{align*}
+		         & (A, i) \precop (B, j) \land (B, j) \precop (A, i)                                                                  \\
+		\iff     & (A \subset B \lor A = B \land i \leq j) \land (B \subset A \lor B = A \land j \leq j) & (\text{def. } \precop)     \\
+		\iff     & (A \subset B \land B \subset A) \lor (A \subset B \land B = A \land j \leq i) \lor                                 \\
+		         & (A = B \land i \leq j \land B \subset A) \lor                                                                      \\
+		         & (A = B \land i \leq j \land B = A \land i \leq j)                                     & (\text{distrib. of } \lor) \\
+		\implies & (A = B \land i \leq j \land B = A \land i \leq j)                                                                  \\
+		\iff     & (A = B \land i = j) \iff (A,i) = (B,j)
+	\end{align*}
+	For both reflexivity and anti-symmetry, we do not need to cover mixed operands: By definition, a symbolic type is never more precise than a constant type. To show that $\precop$ is transitive, we therefore need to cover following cases for $a, b \in \mfodlTCst$, $(A, i), (B, j), (C, k) \in \mfodlTSymb$:
+	\begin{align*}
+		\textbf{case } & a \precop b \precop (A,i)                                                                                          \\
+		\iff           & a \subseteq b \land b \in A                                                                                        \\
+		\implies       & a \in A                                                                               & (\text{def. type class})   \\
+		\iff           & a \precop (A, i)                                                                      & (\text{def. } \precop)     \\
+		\textbf{case } & a \precop (A,i) \precop (B,j)                                                                                      \\
+		\iff           & a \in A \land (A \subset B \lor  A = B \land i \leq j)                                                             \\
+		\implies       & a \in B                                                                                                            \\
+		\iff           & a \precop B                                                                           & (\text{def. } \precop)     \\
+		\textbf{case } & (A,i) \precop (B,j) \precop (C,k)                                                                                  \\
+		\iff           & (A \subset B \lor A = B \land i \leq j) \land (B \subset C \lor B = C \land j \leq k)                              \\
+		\iff           & (A \subset B \land B \subset C) \lor (A \subset B \land B = C \land j \leq k) \lor                                 \\
+		               & (A = B \land i \leq j \land B \subset C) \lor                                                                      \\
+		               & (A = B \land i \leq j \land B = C \land j \leq k)                                     & (\text{distrib. of } \lor) \\
+		\implies       & A \subset C \lor A = C \land i \leq k                                                                              \\
+		\iff           & (A,i) \leq (C,k)                                                                      & (\text{def. } \precop)
+	\end{align*}
+\end{proof}
+
+The proof above implies that the set of all types $\mfodlTy$, together with the relation $\precop$, forms a partially ordered set. Using the relation $\precop$, we can now declare the type class $\mfodlProdTcls{C}$ more precisely: $\mfodlProdTcls{C} := \{ \mfodlNames \{\ FS\ \} \mid \forall (f_c : t_c) \in \mathcal{C} : \exists \{ f : t \} \in FS .\ f = f_c \land t \precop t_c \}$ for a set of constraints $\mathcal{C} \subseteq \mfodlNames \times \mfodlTy$. Intuitively, $\mathcal{C}$ is the minimal set of fields and their symbolic or constant types, which a product type must consist of to be an element of $\mfodlProdTcls{C}$.
+
+\begin{proposition}
+	$\mfodlTy$ together with $\precop$ forms a meet-semilattice.
+\end{proposition}
+\begin{proof}
+	We first prove the existence of a unique greatest and smallest element in the partially ordered set $\mfodlTy$: We recall that $\mfodlTy$ contains the constant type $\bot$ representing the empty set, and the symbolic type $(\mfodlAnyTcls, i_{max})$, with $\mfodlAnyTcls$ representing the type class containing all types, and $i_{max}$ equal the largest index of all symbolic types of class $\mfodlAnyTcls$: $\forall (A,j) \in \mfodlTSymb: A = \mfodlAnyTcls \implies j \leq i$. To prove the existence of a unique greatest and smallest element in $\mfodlTy$, it is sufficient to show that $t \precop (\mfodlAnyTcls, i_{max})$ and $\bot \precop t$ hold for all $t \in \mfodlTy$:
+
+	In case of $t \in \mfodlTCst$, then $t \precop \mfodlTAny \equiv t \in \mathsf{Any}$ holds by definition of $\mathsf{Any}$. $\bot \precop t \equiv \bot \subseteq t$ is also true by definition of $\bot$.
+
+	In case of $t = (A,i) \in \mfodlTSymb$, $(A,i) \precop (\mathsf{Any}, i_{max})$ is equivalent to $A \subset \mathsf{Any} \lor A = \mathsf{Any} \land i \leq i_{max}$, proving the existence of a greatest element. Finally, $\bot \precop t=(A, i)$ is equivalent to $\bot \in A$ and holds based on the fact that the type class $A$ is non-empty and contains the transitive closure over all its members, including the empty set. The uniqueness of both the greatest and smallest element can be proven by contradiction: Assume there exist two greatest elements $t_1, t_2$ of $\mfodlTy$: By definition we have $t_1 \precop t_2$ and $t_2 \precop t_1$, which -- by definition of $\precop$ -- can only hold if and only if $t_1 = t_2$. We can similarly prove that the smallest element is unique.
+
+	We now show that for every subset $\{t_1, t_2\} \subseteq \mfodlTy$ of size two, there exists a unique greatest lower bound, representing the meet of $t_1$ and $t_2$: Because all types in $\mfodlTCst$ are defined as pairwise disjunct, the definition of $\precop$ infers that the only type more precise than any constant type is the bottom type: $\forall t, t' \in \mfodlTCst .\ t \precop t' \implies t = t' \lor t = \bot$. Therefore, if $t_1, t_2 \in \mfodlTCst$, their meet is uniquely represented by $\bot$. \\
+	In case of $t_i \in \mfodlTCst$, $t_{j} \in \mfodlTSymb$ for $i \in \{0, 1\}$, $j = 2 - i$: If $t_i \precop t_j$, their meet is clearly $t_i$. In any other case, the only existing lower bound of $t_i$ and $t_j$ is $\bot$, and therefore equal to their meet.\\
+	For the last case where $t_1, t_2 \in \mfodlTSymb$, we distinguish between the following cases: If $t_1, t_2 \in \mfodlTSymb - \mfodlProdTcls{C}$ for some $\mathcal{C}$, we can derive the existence of a meet by the fact that $\left(\mathcal{P}(\mfodlTCst), \subseteq \right)$ forms a complete lattice. If exactly one of $t_1, t_2$ is part of $\mfodlProdTcls{C}$ for some $\mathcal{C}$, then their common meet is $\bot$, because $\mathsf{Prod}$ is the only type class containing any product types. Finally, if $t_1 \in \mathsf{Prod}[\mathcal{C}_1],\ t_2 \in \mathsf{Prod}[\mathcal{C}_2]$, we derive their meet $\mathsf{Prod}[\mathcal{C}_{meet}]$ by merging the constraints $\mathcal{C}_1$ and $\mathcal{C}_2$ the following way: $\mathsf{Prod}[\mathcal{C}_{1 \setminus 2}] = \left\{ (f, t) \in \mathcal{C}_1 \mid \nexists (f', t') \in \mathcal{C}_2 .\ f' = f \right\}$, $\mathsf{Prod}[\mathcal{C}_{2 \setminus 1}] = \left\{ (f, t) \in \mathcal{C}_2 \mid \nexists (f', t') \in \mathcal{C}_1 .\ f' = f \right\}$, $\mathcal{C}_{common} = \left\{ f \in \mfodlNames \mid (f, \_) \in \mathcal{C}_1 \land (f, \_) \in \mathcal{C}_2 \right\}$ and $\mathcal{C}_{1 \sqcap 2} = \left\{ \left( f, \mathcal{C}_1[f] \sqcap \mathcal{C}_2[f] \right) \mid f \in \mathcal{C}_{common} \right\}$, where $\sqcap$ is the meet operator. We can then define $\mathcal{C}_{meet} = \mathcal{C}_{1 \setminus 2} \cup \mathcal{C}_{2 \setminus 1} \cup \mathcal{C}_{1 \sqcap 2}$.
+\end{proof}
+
+Using our definitions above, we can visualize the type lattice used by \MonPoly by a simplified Hasse diagram in Figure \ref{fig:type_lattice}. Symbolic types are represented by their type class. The symbolic type represented by $\mathsf{Prod[\{\}]}$ stands for all product types because the set of constraints $\mathcal{C}$ is empty.
+
+Algorithm \ref{code:type_inference} shows the conceptual structure of \MonPoly's type inference algorithm. The key part of the algorithm is in line \ref{line:type_inference_meet}, where it computes the meet of the actual and expected type of a term. Because $\mfodlTy$ together with $\precop$ forms a lattice, the meet is guaranteed to exist. Whenever the meet is equal to $\bot$, the type inference algorithm throws an error. We do not regard variables of type $\bot$ as semantically valid: There exists no value assignable to $\bot$, as it represents the empty type set. Finally, after type checking an input formula $f$, all variables are expected to have a constant type assigned: if a variable is of a symbolic type after type checking, the formula is polymorphic as the inference algorithm was unable to derive its type.
+
+Intuitively, every new variable gets assigned a type at the top of the Hasse diagram. With every new constraint propagated through the symbol table, the type of a variable may \textit{move} downwards along the lines of the Hasse diagram.
+
+\begin{figure}
+	\centering
+	\begin{tikzpicture}
+		\node (bot) at (2.5,-1) {$\bot$};
+		\node (str) at (-2,1) {$\mfodlString$};
+		\node (reg) at (-1,1) {$\mfodlRegex$};
+		\node (int) at (0,1) {$\mfodlInt$};
+		\node (float) at (1,1) {$\mfodlFloat$};
+		\node (bool) at (2,1) {$\mfodlBool$};
+		\node (null) at (3,1) {$\mfodlNull$};
+		\node (s1) at (4.5,1) {$\mathsf S_1 \{ FS_{S_1} \}$};
+		\node (sx) at (6,1) {\dots};
+		\node (s2) at (7.5,1) {$\mathsf S_2 \{ FS_{S_2} \}$};
+		\node (num) at (0.5,2) {$\mfodlNumTcls$};
+		\node (px1) at (4.5,2) {$\dots$};
+		\node (px2) at (6,2) {$\dots$};
+		\node (px3) at (7.5,2) {$\dots$};
+		\node (ord) at (0,3) {$\mfodlOrdTcls$};
+		\node (p) at (6,3) {$\mathsf{Prod[\{\}]}$};
+		\node (any) at (2.5,4) {$\mfodlAnyTcls$};
+		\draw
+		(bot) -- (str) (bot) -- (reg) (bot) -- (int) (bot) -- (float) (bot) -- (bool)
+		(bot) -- (null) (bot) -- (s1) (bot) -- (s2)
+		(int) -- (num) (float) -- (num)
+		(bool) -- (any) (null) -- (any)
+		(s1) -- (px1) (s1) -- (px2) (s2) -- (px2) (s2) -- (px3)
+		(str) -- (ord) (reg) -- (ord) (num) -- (ord)
+		(px1) -- (p) (px2) -- (p) (px3) -- (p)
+		(ord) -- (any) (p) -- (any)
+		;
+		% \draw[preaction={draw=white, -,line width=6pt}] (a) -- (e) -- (c);
+	\end{tikzpicture}
+	\label{fig:type_lattice}
+	\caption{Simplifed Hasse diagram of \MonPoly's type system}
+\end{figure}
+
+\RestyleAlgo{ruled}
+\SetKwProg{Fn}{Function}{ is}{end}
+\SetKw{Throw}{throw}
+\begin{algorithm}
+	\LinesNumbered
+	\label{code:type_inference}
+	\caption{\MonPoly's type inference algorithm}
+	\KwData{input formula $f$, predicate schema $\Delta$, custom sorts $\Tau$, symbol table $\Gamma$}
+	\tcc{initialize all variables of the current symbol table with $\mfodlAnyTcls$:}
+	\ForEach{$v \in \Gamma$}{
+		$i \gets \text{unique index}$\;
+		$v \gets (\mfodlAnyTcls, i)$\;
+	}
+	\tcc{recurse over input formula:}
+	\ForEach{$f' \in walk(f)$}{
+		\ForEach{$t \in terms(f')$}{
+			\tcc{Apply the rules from Figure \ref{fig:formula_type_rules}:}
+			$\tau_{expt} \gets$ expected type for term $t$ to make $f'$ well-formed\;
+			$typecheck\_term(t, \tau_{exp})$\;
+		}
+	}
+	\tcc{Verify that the type of all variables has been resolved to a constant type:}
+	\ForEach{$v \in \Gamma$}{
+		\If{type of $v \in \mfodlTSymb$}{
+			\Throw{type error: unresolved type}
+		}
+	}
+
+	\Fn{\text{typecheck\_term}($t, \tau_{exp}$)}{
+		\tcc{Apply the rules from Figure \ref{fig:term_type_rules}:}
+		$t_{curr} \gets \text{type of } t$ based on current $\Gamma$\;
+		$\tau_{new} \gets$ meet of $\{\tau_{curr}, \tau_{exp}\}$\; \label{line:type_inference_meet}
+		\eIf{$\tau_{new} = \bot$}{
+			\Throw{type error: incompatible types}
+		}{
+			update every occurence of $\{t_{curr}, t_{exp}\}$ with $t_{new}$ in $\Gamma$\;
+		}
+	}
+\end{algorithm}
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "thesis"
+%%% End:

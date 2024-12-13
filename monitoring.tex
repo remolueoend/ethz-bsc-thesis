@@ -1,0 +1,362 @@
+\chapter{Extending MonPoly}
+\label{chap:extending_monpoly}
+
+This chapter gives an overview of the \MonPoly extensions providing support for monitoring complex data types. We first present the extended grammar of signatures, formulas, and log files accepted as valid inputs by \MonPolyN. Next, we describe the internal monitoring pipeline and the implementation of specific algorithms described in previous chapters.
+All extensions mentioned in this chapter are implicitly backward compatible with inputs for earlier versions of \textsc{MonPoly}.
+
+\section{Input format}
+To monitor an application log stream, \MonPoly requires additional inputs besides the log stream under monitoring \cite{basinMonPolyMonitoringTool2017}: The formula file contains the property under monitoring, written as a CMFODL formula. Its concrete syntax is explained in Section \ref{sec:grammar_formulas}. The signature file describes all custom sorts used by the input formula. The accepted syntax of signature files is described in Section \ref{sec:grammar_signatures}. At last, \ref{sec:grammar_log} describes the expected format of log streams.
+
+\subsection{Policy format}
+\label{sec:grammar_formulas}
+Monitoring policies in \MonPoly are formulated in a syntax corresponding to complex-typed MFODL introduced in Chapter \ref{chap:complex_data_types}. Figure \ref{fig:grammar_formula_syntax} describes the concrete syntax of a well-formed formula file. The functions \code{f2i}, \code{i2f}, \code{f2s}, \code{s2f}, \code{i2s}, \code{s2i} may be used to convert terms between floats, integers and strings. Table \ref{tab:math_op_mapping} maps the mathematical notation of MFODL formulas to their corresponding notation in the concrete formula syntax.
+
+\begin{figure}
+	\[
+		\begin{array}{ll}
+			\ebnfr{formula}        & ::=                                                                                                                                                                           \\
+			                       & \mid \ebnft{TRUE} \mid \ebnft{FALSE}                                                                                                                                          \\
+			                       & \mid \ebnft{(}, \ebnfr{formula}, \ebnft{)} \mid \ebnft{NOT}, \ebnfr{formula}                                                                                                  \\
+			                       & \mid \ebnfr{term}, (\ebnft{=} \mid \ebnft{>} \mid \ebnft{<} \mid \ebnft{<=} \mid \ebnft{<=}), \ebnfr{term}                                                                    \\
+			                       & \mid \ebnfr{formula}, (\ebnft{EQUIV} \mid \ebnft{IMPLIES} \mid \ebnft{AND} \mid \ebnft{OR}), \ebnfr{formula}                                                                  \\
+			                       & \mid (\ebnft{EXISTS} \mid \ebnft{FORALL}), \ebnfr{var \mhyp list}, \ebnft{.}, \ebnfr{formula}                                                                                 \\
+			                       & \mid \ebnfr{var}, \ebnft{<-}, \ebnfr{aggreg}, \ebnfr{var}, [\ebnft{;}, \ebnfr{var \mhyp list}], \ebnfr{formula}                                                               \\
+			                       & \mid \ebnfr{unop_i}, [\ebnfr{interval}], \ebnfr{formula}                                                                                                                      \\
+			                       & \mid \ebnfr{formula}, (\ebnft{SINCE} \mid \ebnft{UNTIL}), [\ebnfr{interval}], \ebnfr{formula}                                                                                 \\
+			                       & \mid \ebnfr{term}, \ebnft{SUBSTRING}, \ebnfr{term}                                                                                                                            \\
+			                       & \mid \ebnfr{term}, \ebnft{MATCHES}, \ebnfr{term}, [ \ebnft{(}, ( \ebnft{\_} \mid \ebnfr{term} ), \{ \ebnft{,} (\ebnft{\_} \mid \ebnfr{term}) \} \ebnft{)} ]                   \\
+			                       & \mid \ebnfr{pred}                                                                                                                                                             \\
+			                       & \mid (\ebnft{|>} \mid \ebnft{MATCHF} \mid \ebnft{FORWARD}),  [\ebnfr{interval}], \ebnfr{fregex}                                                                               \\
+			                       & \mid (\ebnft{<|} \mid \ebnft{MATCHP} \mid \ebnft{BACKWARD}),  [\ebnfr{interval}], \ebnfr{pregex}                                                                              \\
+			                       & \mid (\ebnft{LET} \mid \ebnft{LETPAST}), \ebnfr{pred}, \ebnft{IN}, \ebnfr{formula}                                                                                            \\
+			\ebnfr{pred}           & ::=       \ebnfr{ident}, \ebnft{(}, [\ebnfr{term}, \{ \ebnft{,}, \ebnfr{term} \}], \ebnft{)}                                                                                  \\
+			\ebnfr{unop_i}         & ::=
+			\ebnft{NEXT} \mid \ebnft{PREV} \mid \ebnft{EVENTUALLY} \mid \ebnft{ONCE} \mid \ebnft{ALWAYS} \mid \ebnft{PAST\_ALWAYS}                                                                                 \\
+			\ebnfr{aggreg}         & ::=
+			\ebnft{CNT} \mid \ebnft{SUM} \mid \ebnft{AVG} \mid \ebnft{MED} \mid \ebnft{MIN} \mid \ebnft{MAX}                                                                                                       \\
+			\ebnfr{interval}       & ::=
+			(\ebnft{(} \mid \ebnft{[}), \ebnfr{bound}, \ebnft{,}, (\ebnfr{bound} \mid \ebnft{*}), (\ebnft{)} \mid \ebnft{]})                                                                                       \\
+			\ebnfr{bound}          & ::=
+			\ebnfr{integer}, [\ebnft{s} \mid \ebnft{m} \mid \ebnft{h} \mid \ebnft{d}]                                                                                                                              \\
+			\ebnfr{var \mhyp list} & ::=
+			\ebnfr{var}, \{ \ebnft{,}, \ebnfr{var} \}                                                                                                                                                              \\
+			\ebnfr{term}           & ::=                                                                                                                                                                           \\
+			                       & \mid \ebnfr{term}, (\ebnft{+} \mid \ebnft{-} \mid \ebnft{*} \mid  \ebnft{/} \mid \ebnft{MOD}), \ebnfr{term}                                                                   \\
+			                       & \mid \ebnft{-}, \ebnfr{term} \mid \ebnft{(}, \ebnfr{term}, \ebnft{)}                                                                                                          \\
+			                       & \mid (\ebnft{f2i} \mid \ebnft{i2f} \mid \ebnft{i2s} \mid \ebnft{s2i} \mid \ebnft{f2s} \mid \ebnft{s2f} \mid \ebnft{r2s} \mid \ebnft{s2r}), \ebnft{(}, \ebnfr{term}, \ebnft{)} \\
+			                       & \mid (\ebnft{DAY\_OF\_MONTH} \mid \ebnft{MONTH} \mid \ebnft{YEAR} \mid \ebnft{FORMAT\_DATE}), \ebnft{(}, \ebnfr{term}, \ebnft{)}                                              \\
+			                       & \mid \ebnfr{var} \mid \ebnfr{cst} \mid \ebnfr{term}, \ebnft{.}, \ebnfr{ident}                                                                                                 \\
+			\ebnfr{fregex}         & ::=                                                                                                                                                                           \\ & \mid \ebnft{(}, \ebnfr{fregex}, \ebnft{)} \mid \ebnft{.} \mid \ebnfr{fregex}, \ebnfr{formula}, \ebnft{?}, \mid \ebnfr{fregex}, \ebnfr{fregex}                \\
+			                       & \mid \ebnfr{fregex}, \ebnft{+}, \ebnfr{fregex} \mid \ebnfr{fregex}, \ebnft{*}, \ebnfr{fregex}                                                                                 \\
+			\ebnfr{pregex}         & ::=                                                                                                                                                                           \\ & \mid \ebnft{(}, \ebnfr{pregex}, \ebnft{)} \mid \ebnft{.} \mid \ebnfr{pregex}, \ebnfr{formula}, \ebnft{?}, \mid \ebnfr{pregex}, \ebnfr{pregex}                \\
+			                       & \mid \ebnfr{pregex}, \ebnft{+}, \ebnfr{pregex} \mid \ebnfr{pregex}, \ebnft{*}, \ebnfr{pregex}                                                                                 \\
+			\ebnfr{cst}            & ::=                                                                                                                                                                           \\
+			                       & \mid \ebnfr{integer} \mid \ebnfr{rational} \mid \ebnft{"}, \ebnfr{string}, \ebnft{"} \mid \ebnft{true} \mid \ebnft{false}                                                     \\
+			                       & \mid \ebnfr{ident}, \ebnft{\{}, \{ \ebnfr{ident}, \ebnft{:}, \ebnfr{cst} \}, \ebnft{\}}                                                                                       \\
+			\ebnfr{var}            & ::= \ebnfr{ident}                                                                                                                                                             \\
+			\ebnfr{ident}          & ::= (\ebnfr{letter} \mid \ebnfr{digit} \mid \ebnft{\_}), \{ \ebnfr{letter} \mid \ebnfr{digit} \mid \ebnft{\_} \}                                                              \\
+		\end{array}
+	\]
+	\caption{EBNF-form of well-formed formula files}
+	\label{fig:grammar_formula_syntax}
+\end{figure}
+
+\begin{table}
+	\begin{center}
+		\begin{tabular}{|l|l|l|}
+			\hline
+			symbol                                                                    & \MonPoly terminal                                    & assoc. \\
+			\hline\hline
+			$\lnot$                                                                   & \code{NOT}                                           & none   \\
+			$\land$                                                                   & \code{AND}                                           & left   \\
+			$\lor$                                                                    & \code{OR}                                            & left   \\
+			$\rightarrow$                                                             & \code{IMPLIES}                                       & right  \\
+			$\leftrightarrow$                                                         & \code{EQUIV}                                         & left   \\
+			$\exists \; \forall$                                                      & \code{EXISTS FORALL}                                 & none   \\
+			$\mathsf{S} \; \mathsf{U}$                                                & \code{SINCE UNTIL}                                   & none   \\
+			$\mfodlPrev\mfodlNext\mfodlOnce\mfodlEventually\mfodlPAlways\mfodlAlways$ & \code{PREV NEXT ONCE EVENTUALLY PAST\_ALWAYS ALWAYS} & right  \\
+			\hline
+		\end{tabular}
+	\end{center}
+	\caption{Mapping between mathematical and \MonPoly notation}
+	\label{tab:math_op_mapping}
+\end{table}
+
+\subsection{Signatures format}
+\label{sec:grammar_signatures}
+Signature files describe the signature $\mfodlSig = \left( \mfodlPrimitiveSorts, S_{def}, \{\} \right)$ used by a formula \cite{basinMonPolyMonitoringTool2017}. Specifically, signature files allow users to declare all custom sorts $s \in S_{def}$. The predicate-based signatures used by earlier versions of \MonPoly are still supported. Figure \ref*{fig:extended_signatures_ebnf} shows the syntax of extended signature files. What now follows is a set of rules and definitions related to declaring well-formed signatures:
+\begin{definition}[Top-level sorts]
+	\label{def:signatures_toplevel}
+	We define the set of custom sorts declared in a signature file and prefixed with the keyword $\mathsf{event}$ as $\mathsf{TopLevel}$. For every time point $i$, $\{s \mid (\_, s) \in \mathds{O}\} \subseteq \mathsf{TopLevel}$ is satisfied.
+\end{definition}
+
+\begin{definition}[Inline sorts]
+	The syntax declared in Figure \ref{fig:extended_signatures_ebnf} allows the declaration of inline product sorts. This syntactic feature improves the readability of deeply nested data structures by inlining the declaration of a nested sort. Inline sorts are automatically extracted to separate product sort definitions during parsing and have no further semantic interpretation.
+\end{definition}
+\begin{example}
+	Using inline sorts, we can describe a custom sort $\mathsf{Request}$ as $\mathsf{Request\ \{ url:string,\ user:\{ name:string \} \}}$. This signature is equivalent to $\mathsf{Request\ \{ url:string,\ user:Request\_user \}}$; $\mathsf{Request\_user\ \{ name: string \}}$.
+\end{example}
+
+\begin{rule2}[No recursive sorts]
+	As declared in Section \ref{sec:extensions_mfold_syntax}, there exists a well-formedness constraint prohibiting recursion between sorts. Therefore, the sort of a declared product sort field must not reference its parent sort directly or indirectly.
+\end{rule2}
+
+\begin{rule2}[Unique top-level sorts]
+	\label{rule:unique_top_level}
+	Top-level sorts as defined in Definition \ref{def:signatures_toplevel} must be pairwise structurally distinct. This is required by the sort matching algorithm introduced in Section \ref{sec:match_custom_sorts}.
+\end{rule2}
+
+As described in Figure \ref{fig:extended_signatures_ebnf}, the type $\mathsf{null}$ can only be used to declare the sort of a field because it is a JSON-specific data type. It is still helpful to pattern-match against nullable fields, as shown in Example \ref{ex:null_match}.
+
+\begin{figure}
+	\[
+		\begin{array}{lll}
+			\ebnfr{signature}              & ::= & \{ \ebnfr{product \mhyp sort} \mid \ebnfr{predicate \mhyp symbol}  \}                                        \\
+			\ebnfr{predicate \mhyp symbol} & ::= & \ebnfr{ident}, \ebnft{(}, \ebnfr{pred \mhyp arg}, \{ \ebnft{,}, \ebnfr{pred \mhyp arg} \}, \ebnft{)}         \\
+			\ebnfr{pred \mhyp arg}         & ::= & [ \ebnfr{ident} \ebnft{:} ], \ebnfr{primitive \mhyp sort}                                                    \\
+			\ebnfr{primitive \mhyp sort}   & ::= & \ebnft{string} \mid \ebnft{int} \mid \ebnft{float} \mid \ebnft{bool}                                         \\
+			\ebnfr{product \mhyp sort}     & ::= & [\ebnft{event}], \ebnfr{ident}, \ebnfr{product \mhyp body}                                                   \\
+			\ebnfr{product \mhyp body}     & ::= & \ebnft{\{}, \ebnfr{product \mhyp field}, \{\ebnft{,}, \ebnfr{product \mhyp field} \} \ebnft{\}}              \\
+			\ebnfr{product \mhyp field}    & ::= & \ebnfr{ident} \ebnft{:} \ebnfr{field \mhyp type}                                                             \\
+			\ebnfr{field \mhyp type}       & ::= & \ebnfr{primitive \mhyp sort} \mid \ebnfr{ident} \mid \ebnfr{record \mhyp body}  \mid\ \ebnft{null}           \\
+			\ebnfr{ident}                  & ::= & (\ebnfr{letter} \mid \ebnfr{digit} \mid \ebnft{\_}), \{ \ebnfr{letter} \mid \ebnfr{digit} \mid \ebnft{\_} \} \\
+		\end{array}
+	\]
+	\caption{EBNF-form of well-formed signature files}
+	\label{fig:extended_signatures_ebnf}
+\end{figure}
+
+\begin{example}
+	\label{ex:null_match}
+	Assume a JSON log stream of events, where each event has a type and an optional occurrence count, declared either as an integer value or by the default value $\mathsf{null}$. We want to aggregate the sum of the number of occurrences, grouped by the event type, where $\mathsf{null}$ counts as 1. The following listings present a signature and formula of a possible solution, making use of the $\mathsf{null}$ type as field sort:
+
+	\begin{lstlisting}[
+		style=signatures,
+		caption=Signature describing variants of events,
+		literate=
+		 *{Event}{{{\color{codeblue}Event}}}{5}
+	      {DefaultEvent}{{{\color{codeblue}DefaultEvent}}}{12}
+	      {event}{{{\color{keyword}event}}}{5}
+	      {:}{{{\color{codegray}{:}}}}{1}
+	      {;}{{{\color{codegray}{;}}}}{1}
+	      {,}{{{\color{codegray}{,}}}}{1}
+	      {\{}{{{\color{codegray}{\{}}}}{1}
+	      {\}}{{{\color{codegray}{\}}}}}{1}
+          {null}{{{\color{keyword}null}}}{4}
+	      {[}{{{\color{codegray}{[}}}}{1}
+	      {]}{{{\color{codegray}{]}}}}{1}
+	      {(}{{{\color{codegray}{(}}}}{1}
+	      {)}{{{\color{codegray}{)}}}}{1},
+	]
+event Event {
+	type: string,
+	count: int
+}
+event DefaultEvent {
+	type: string,
+	count: null
+}
+	\end{lstlisting}
+
+	\begin{lstlisting}[style=formula,caption=A formula aggregating over variants of events]
+s <- SUM count; type (ONCE [0,*]
+	(EXISTS e. (Event(e) AND type = e.type AND count = e.count)) OR
+	(EXISTS e. (DefaultEvent(e) AND type = e.type AND count = 1))
+)
+	\end{lstlisting}
+\end{example}
+
+\subsection{JSON log format}
+\label{sec:grammar_log}
+One of the main benefits of this work is the possibility of monitoring JSON-based logs without fundamental transformations. Nevertheless, the newly introduced JSON log parser of \MonPoly only supports a subset of log file formats. Despite the introduction of standards for event-driven application logs, such as XES \cite{IEEEStandardEXtensible2016} or XOC \cite{liExtractingObjectCentricEvent2018}, applications may use their own custom file formats to output streams of logged events. To accommodate this fact, the JSON log parser of \MonPoly keeps the number of requirements regarding the format of the log input as small as possible to allow monitoring large sets of application logs with minimal transformation.
+
+Figure \ref{fig:json_log_ebnf} describes the supported log stream format. Every top-level JSON structure in the input log stream must be a JSON record value, while other JSON document types are not supported yet. Every top-level JSON record must either directly follow a timestamp token or appear on a separate line. Each timestamp token declares the beginning of a new time point and defines the assigned timestamp on all JSON records occurring after it.
+Finally, the newly introduced log parser maintains support for \MonPoly commands.
+
+\begin{figure}
+	\[
+		\begin{array}{lll}
+			\ebnfr{log}                & ::=  \{ \ebnfr{time \mhyp point} \mid \ebnfr{command} \}, [\ebnfr{ts}]                                    \\
+			\ebnfr{time \mhyp point}   & ::=  \ebnfr{ts}, \ebnfr{json \mhyp record}, \{ \ebnfr{newline}, \ebnfr{json \mhyp record} \}              \\
+			\ebnfr{command}            & ::=  \ebnft{>}, \ebnfr{command \mhyp name}, [ \ebnfr{string} \{ \ebnft{,}, \ebnfr{string} \} ], \ebnft{<} \\
+			\ebnfr{command \mhyp name} & ::=                                                                                                       \\ & \mid \ebnft{print} \mid \ebnft{terminate} \mid \ebnft{print\_and\_exit} \mid \ebnft{get\_pos}             \\
+			                           & \mid \ebnft{save\_state} \mid \ebnft{save\_and\_exit} \mid \ebnft{set\_slicer}                            \\ & \mid \ebnft{split\_save} \\
+			\ebnfr{ts}                 & ::=  \ebnft{@}, \ebnfr{integer}                                                                           \\
+		\end{array}
+	\]
+	\caption{EBNF-form of the supported JSON log format}
+	\label{fig:json_log_ebnf}
+\end{figure}
+
+\section{Monitoring pipeline}
+
+This chapter describes the internal data flow of a monitoring process between the components of \MonPolyN. Figure \ref{fig:monitoring_pipeline} provides an overview of all involved components. While solid lines represent the single passing of data, dashed lines describe data streams. \code{*.mfotl}, \code{*.sig} and \code{*.log} describe input files for formulas, signatures and log streams. We further introduce some declarations related to JSON: The set $\mathsf{JsonValue}$ describes the set of all well-formed JSON documents of type object, array, string, number, boolean and null \cite{pezoaFoundationsJSONSchema2016}. The set $\mathsf{JsonObject} := \mathcal{P}\left( \mfodlString \times \mathsf{JsonValue} \right) \subset \mathsf{JsonValue}$ consists of all JSON object values, where each element is represented as a set of tuples mapping a field name to a JSON value.
+
+Steps 1 and 2 represent the parsing and type checking of a CMFODL formula. Section \ref{sec:formula_annotations} describes the data structure \code{cplx\_formula} in more detail. The type checker, implementing the algorithms described in Chapter \ref{chap:type_checking}, annotates the parsed formula with the derived type information, stored in a data structure \code{tctxt}: It consists of the symbol table, predicate schema, and custom sorts of the current formula. The type-checked formula is then forwarded to the preprocessing and compilation (Steps 3 and 4), described in Chapter \ref{chap:compilation}. Before the compiled formula is passed to the \MonPoly monitor, its monitorability properties from Chapter \ref{chap:monitorability} are validated in Step 5. If the validation fails, the monitoring process is halted.
+
+Based on the presence of the command line flag \code{--json}, the content of the log stream is either passed to the existing parser of \MonPoly or the newly implemented JSON log parser (Steps 8 and 9). In the case of a JSON log stream, the parsed JSON objects are matched against custom signatures in Step 10. This process is explained in Section \ref{sec:match_custom_sorts}. Step 7: \textit{Create Relation Schema} represents the implementation of Algorithm \ref{code:gen_relations}, described in Section \ref{sec:transform_signatures}. Similarly, the tuples output by Steps 9 and 10 and generated based on Section \ref{sec:transform_temp_structure}, describing the transformation of complex-typed temporal structures.
+
+Finally, the compiled formula, the relation schema, and the stream of tuples from the log input are passed to \MonPoly's monitoring component in Step 11.
+
+
+\subsection{Formula annotations}
+\label{sec:formula_annotations}
+Type information of formula terms is not only relevant during type checking of an input formula, but also useful for succeeding tasks such as compilation and monitorability checks. MFODL constructs such as quantifiers, let statements, and aggregations introduce nested scopes, where variables from outer scopes may be shadowed. To retain the type information of variables in nested scopes, a single global symbol table and predicate schema will not suffice. We instead extend the data structure describing a formula with an additional field storing some polymorphic formula annotation: \code{type 'a cplx\_formula = ('a * formula\_ast)}, where \code{formula\_ast} references the data structure described in Figure \ref{fig:grammar_formula_syntax}. This allows the type checker to store formula- and scope-specific type information, which subsequent formula transformations can access.
+
+\subsection{Matching custom sorts}
+\label{sec:match_custom_sorts}
+Chapter \ref{chap:complex_data_types} introduces the sets of domain values $\mathds{D}$ and objects $\mathds{O} \subseteq \mathds{D}$, where each element is tagged with its corresponding sort. On the other hand, a JSON object read from a log entry is not tagged. To derive the custom product sort of a JSON object, we need to match the structure of the JSON object against every sort $s \in \mathsf{TopLevel}$ declared in the signature. We require the partial mapping from JSON objects to sorts to be well defined. Therefore, all sorts $s \in \mathsf{TopLevel}$ must be pairwise structurally distinct.
+We further allow the mapping from JSON objects to signatures to be partial: Whenever a JSON object is encountered whose structure does not match that of any custom sort, a warning is printed to the application output, but no error is raised. This allows the monitoring of application logs where the set of all custom sorts $\{ s \mid (\_,s) \in \mathds{D} \}$ is not known in advance.
+Finally, all JSON fields of list types are ignored when matching their structure. This allows the monitoring of log streams containing list structures without the explicit support of describing them as part of a custom sort.
+
+Algorithm \ref{code:signature_matching} describes the mapping as a recursive function: For each field of a given JSON object, we distinguish three cases: If the field's value is of a list type, we ignore it and continue. Whenever the field's value is a nested object, we call \code{find\_sort} recursively, only matching against the sort of the corresponding field. In any other case, we compare the type of the field value with the corresponding sort using the relation operator $\approx\ := \{ (\mathsf{string}, \mfodlString), (\mathsf{int}, \mfodlInt), (\mathsf{float}, \mfodlFloat), (\mathsf{boolean}, \mfodlBool), (\mathsf{null}, \mfodlNull) \}$. For a given JSON object, \code{find\_sort} is then initially called on line \ref{line:match_sort_call} to match against all custom sorts in $\mathsf{TopLevel}$.
+
+\SetKwProg{Fn}{Function}{ is}{end}
+\SetKw{Continue}{continue}
+\begin{algorithm}
+	\LinesNumbered
+	\label{code:signature_matching}
+	\caption{Match JSON objects against custom sorts}
+	\KwData{JSON object $o \in \mathsf{JsonObject}$}
+	\Fn{\text{find\_sort}($S$)}{
+		\KwData{Set of custom sorts $S \subseteq S_{def}$.}
+		\KwResult{Custom sort $s \in S$ of $o$, or $\bot$.}
+		\ForEach{sort $s \in S$}{
+			\ForEach{field $f \in o$}{
+				$\tau_{json} \gets \mathsf{typeof}\ o[f]$\;
+				\tcc{ignore fields of list types:}
+				\If{$\tau_{json} = \mathsf{array}$}{
+					\Continue
+				}
+				\If{$\tau_{json} = \mathsf{object}$}{
+					\tcc{recursively match sort:}
+					\eIf{$find\_sort(o[f], \{ (s', \_) \in S_{def} \mid s' = s(f)\}) = \bot$}{
+						\Return $\bot$\;
+					}{
+						\Continue
+					}
+				}
+				$\tau_{sort} \gets s(f)$\;
+				\If{$\tau_{json} \not\approx s(f)$}{
+					\Return $\bot$\; \label{line:unique_sort_match}
+				}
+			}
+			\tcc{All fields have matched:}
+			\Return $s$\;
+		}
+	}
+	\Call{find\_sort($\{ (s, \_) \in S_{def} \mid s \in \mathsf{TopLevel} \}$)}\; \label{line:match_sort_call}
+\end{algorithm}
+
+After deriving the custom sort of a JSON object, the object is transformed to a set of tuples, as described by Algorithm \ref{code:gen_tuples} in Section \ref{sec:transform_temp_structure}. Similarly to the compilation of constant boolean values in MFODL formulas explained in Section \ref{sec:compilation_of_bools}, JSON values \code{true} and \code{false} and registered as integer values \code{1} and \code{0}.
+
+The current implementation of the JSON log parser generates object identifiers by assigning an incrementing counter to each tuple on registration. The parser resets the counter at the beginning of a new time point. This guarantees that every tuple of the same time point has a unique identifier, enabling unique references between tuples of the same time point. On the other hand, local uniqueness implies that unrelated tuples registered at different time points may share the same identifier, as mentioned previously in Section \ref{sec:transform_temp_structure}.
+
+\begin{figure}
+	\tikzstyle{process} = [rectangle, font=\scriptsize, align=center, minimum width=4cm, minimum height=1cm, text centered, draw=black, fill=white!30]
+	\tikzstyle{decision} = [diamond, font=\scriptsize, minimum width=2cm, minimum height=1cm, text centered, draw=black]
+	\tikzstyle{icon} = [font=\large, minimum width=1cm, minimum height=1cm, text centered, draw=black]
+	\tikzstyle{node_label} = [shift={(0,-1.2cm)}, font=\scriptsize, text centered]
+	\tikzstyle{arrow} = [->, font=\scriptsize]
+	\tikzstyle{stream} = [dashed, ->, font=\scriptsize]
+	\tikzstyle{label} = [font=\scriptsize, align=left]
+	\begin{tikzpicture}[node distance=2cm]
+		\node (parse_formula) [process] {1. Parse Formula};
+		\node (typecheck) [process, below of=parse_formula] {2. Typecheck Formula};
+		\coordinate [below of=typecheck, shift={(0, 1cm)}] (typecheck_out);
+		\node (preprocess) [process, below of=typecheck] {3. Preprocess Formula};
+		\node (compile) [process, below of=preprocess] {4. Compile Formula};
+		\node (monitorability) [decision, aspect=3, align=center, below of=compile] {5. Monitorability\\Check};
+		\node (safety_errors) [icon, below of=monitorability] {\faClose};
+		\node (formula_file) [icon, above of=parse_formula] {\faFileCodeO};
+		\node (formula_file_label) [node_label, above of=formula_file] {\code{*.mfotl}};
+
+		\node (parse_signature) [process, right of=parse_formula, shift={(3cm, 0)}] {6. Parse Signature};
+		\coordinate [below of=parse_signature, shift={(0, 1cm)}] (parse_signature_out);
+		\node (create_relations) [process, below of=parse_signature] {7. Create Relation Schema};
+		\node (sig_file) [icon, above of=parse_signature] {\faFileTextO};
+		\node (sig_file_label) [node_label, above of=sig_file] {\code{*.sig}};
+
+		\node (is_json) [decision, right of=parse_signature, shift={(3cm, 0)}] {\code{--json}?};
+		\node (json_parser) [process, below of=is_json, shift={(-1cm, 0)}, minimum width=2cm] {8. JSON\\Parser};
+		\node (classic_parser) [process, below of=is_json, shift={(1cm, 0)}, minimum width=2cm] {9. Classic\\Parser};
+		\node (match_sigs) [process, below of=json_parser] {10. Match Custom Sorts};
+		\coordinate [below of=match_sigs, shift={(0, 1cm)}] (match_sigs_out);
+		\node (monitor) [process, below of=match_sigs] {11. Monitor};
+		\node (results) [process, below of=monitor] {12. Monitoring Results};
+		\node (log_file) [icon, above of=is_json] {\faDatabase};
+		\node (log_file_label) [node_label, above of=log_file] {\code{*.log}};
+
+
+		\draw [arrow] (formula_file) -- node[label,anchor=west] {\code{token}\\\code{stream}} (parse_formula);
+		\draw [arrow] (parse_formula) -- node[label,anchor=west] {\code{unit}\\\code{cplx\_formula}} (typecheck);
+		\draw [arrow] (typecheck) -- node[label,anchor=west] {\code{tctxt}\\\code{cplx\_formula}} (preprocess);
+		\draw [arrow] (preprocess) -- node[label,anchor=west] {\code{tctxt}\\\code{cplx\_formula}} (compile);
+		\draw [arrow] (compile) -- node[label,anchor=west] {\code{formula}} (monitorability);
+		\draw [arrow] (typecheck_out) -|  ([shift={(-.5cm,0)}]monitorability.west) -- (monitorability);
+		\draw [arrow] (monitorability) -- node[label,anchor=north] {ok} ([shift={(.5cm,0)}]monitorability.east) |- node[label,anchor=south west] {\code{formula}} (monitor);
+		\draw [arrow] (monitorability) -- node[label,anchor=south west] {failed} (safety_errors);
+
+		\draw [arrow] (sig_file) -- node[label,anchor=west] {\code{token}\\\code{stream}} (parse_signature);
+		\draw [arrow] (parse_signature) -- node[label,anchor=south west] {\code{custom sorts}} (create_relations);
+		\draw [arrow] (parse_signature_out) -|  ([shift={(.5cm,0)}]typecheck.east) -- (typecheck);
+		\draw [arrow] (parse_signature_out) -|  ([shift={(-1.5cm,0)}]match_sigs.north);
+		\draw [arrow] (create_relations) |- node[label,anchor=south west] {\code{relations}} ([shift={(-1cm,.5cm)}]monitor.north) -- ([shift={(-1cm,0)}]monitor.north);
+
+		\draw [stream] (log_file) -- node[label,anchor=west] {\code{log entry}} (is_json);
+		\draw [stream] (is_json.west) -- node[label,anchor=east] {yes} (json_parser);
+		\draw [stream] (is_json.east) -- node[label,anchor=west] {no} (classic_parser);
+		\draw [stream] (json_parser) -- node[label,anchor=west] {\code{JSON objects}} (match_sigs);
+		\draw [stream] (match_sigs) -- node[label,anchor=south west] {\code{tuples}} (monitor);
+		\draw [dashed] ([shift={(.5cm,0)}]classic_parser.south) |- (match_sigs_out);
+		\draw [stream] (monitor) -- (results);
+
+	\end{tikzpicture}
+	\caption{Data flow of the monitoring pipeline}
+	\label{fig:monitoring_pipeline}
+\end{figure}
+
+
+% \begin{example}
+% 	Registering tuples from JSON records:
+% \end{example}
+% In this example we consider the following signature:
+% \lstset{style=signatures}
+% \begin{lstlisting}
+% 	event Request { url: string, user: User }
+% 	event Report  { reason: string, user: User }
+% 	      User    { name: string }
+% \end{lstlisting}
+% And the following log entries as input:
+% \begin{lstlisting}
+% 	@10 {"url": "http://ethz.ch", "user": {"name": "bob"}}
+% 	    {"url": "http://url", "user": {"name": "alice"}}
+% 	@20 {"reason": "NotFound", "user": {"name": "alice"}}
+% 	@30
+% \end{lstlisting}
+% Table \ref{tab:ex_registered_tuples} lists all registered tuples per time point, based on the given signature and log entries above. It shows how two unrelated \code{User} tuples are registered with the same identifier \code{1} because they occur at two different time points. Furthermore, one can see how the tuples registered on the \code{Request} and \code{Report} table reference their corresponding \code{User} tuple using the target tuple's identifier.
+
+% \begin{table}[h!]
+% 	\begin{tabularx}{\textwidth}{|r|r?r|l?r|l|l?r|l|l|}
+% 		\hline
+% 		\multirow{3}{*}{tp} & \multirow{3}{*}{ts} & \multicolumn{8}{c|}{registered tuples}                                                                                                             \\
+% 		\cline{3-10}        &                     & \multicolumn{2}{c?}{User}              & \multicolumn{3}{c?}{Request} & \multicolumn{3}{c|}{Report}                                                \\
+% 		\cline{3-10}        &                     & id                                     & name                         & id                          & url            & user & id & reason   & user \\
+% 		\hline
+% 		1                   & 10                  & 1                                      & bob                          & 2                           & http://ethz.ch & 1    &    &          &      \\
+% 		\cline{3-10}        &                     & 3                                      & alice                        & 4                           & http://url     & 3    &    &          &      \\
+% 		\hline
+% 		2                   & 20                  & 1                                      & alice                        &                             &                &      & 2  & NotFound & 1    \\
+% 		\hline
+% 	\end{tabularx}
+% 	\caption{Example of registered database tuples}
+% 	\label{tab:ex_registered_tuples}
+% \end{table}
+
+
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "thesis"
+%%% End:
