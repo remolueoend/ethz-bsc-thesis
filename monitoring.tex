@@ -267,14 +267,14 @@ The current implementation of the JSON log parser generates object identifiers b
 		\node (preprocess) [process, below of=typecheck] {3. Preprocess Formula};
 		\node (compile) [process, below of=preprocess] {4. Compile Formula};
 		\node (monitorability) [decision, aspect=3, align=center, below of=compile] {5. Monitorability\\Check};
-		\node (safety_errors) [icon, below of=monitorability] {\faClose};
-		\node (formula_file) [icon, above of=parse_formula] {\faFileCodeO};
+		\node (safety_errors) [icon, below of=monitorability] {\faTimes};
+		\node (formula_file) [icon, above of=parse_formula] {\faFileCode[regular]};
 		\node (formula_file_label) [node_label, above of=formula_file] {\code{*.mfotl}};
 
 		\node (parse_signature) [process, right of=parse_formula, shift={(3cm, 0)}] {6. Parse Signature};
 		\coordinate [below of=parse_signature, shift={(0, 1cm)}] (parse_signature_out);
 		\node (create_relations) [process, below of=parse_signature] {7. Create Relation Schema};
-		\node (sig_file) [icon, above of=parse_signature] {\faFileTextO};
+		\node (sig_file) [icon, above of=parse_signature] {\faFile*[regular]};
 		\node (sig_file_label) [node_label, above of=sig_file] {\code{*.sig}};
 
 		\node (is_json) [decision, right of=parse_signature, shift={(3cm, 0)}] {\code{--json}?};
