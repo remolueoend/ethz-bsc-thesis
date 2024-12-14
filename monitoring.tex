@@ -213,6 +213,7 @@ Algorithm \ref{code:signature_matching} describes the mapping as a recursive fun
 
 \SetKwProg{Fn}{Function}{ is}{end}
 \SetKw{Continue}{continue}
+\SetKw{Break}{break}
 \begin{algorithm}
 	\LinesNumbered
 	\label{code:signature_matching}
@@ -226,24 +227,27 @@ Algorithm \ref{code:signature_matching} describes the mapping as a recursive fun
 				$\tau_{json} \gets \mathsf{typeof}\ o[f]$\;
 				\tcc{ignore fields of list types:}
 				\If{$\tau_{json} = \mathsf{array}$}{
-					\Continue
+					\Continue;
 				}
 				\If{$\tau_{json} = \mathsf{object}$}{
 					\tcc{recursively match sort:}
 					\eIf{$find\_sort(o[f], \{ (s', \_) \in S_{def} \mid s' = s(f)\}) = \bot$}{
-						\Return $\bot$\;
+						\Break;
 					}{
-						\Continue
+						\Continue;
 					}
 				}
 				$\tau_{sort} \gets s(f)$\;
-				\If{$\tau_{json} \not\approx s(f)$}{
-					\Return $\bot$\; \label{line:unique_sort_match}
+				\If{$\tau_{json} \not\approx \tau_{sort}$}{
+					\Break;
 				}
 			}
-			\tcc{All fields have matched:}
-			\Return $s$\;
+			\If{\textnormal{all fields have matched}}{
+				\Return $s$\;
+			}
 		}
+
+		\Return $\bot$;
 	}
 	\Call{find\_sort($\{ (s, \_) \in S_{def} \mid s \in \mathsf{TopLevel} \}$)}\; \label{line:match_sort_call}
 \end{algorithm}
